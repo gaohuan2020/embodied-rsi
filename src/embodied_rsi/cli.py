@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import math
 import os
@@ -56,10 +57,39 @@ def parser():
     s.add_argument("--port", type=int, default=8091)
     s.add_argument("--rsi-python", help="Optional separate interpreter for RSI training jobs")
     loop = sub.add_parser("cycle")
-    loop.add_argument("--rounds", type=int, default=2)
+    loop.add_argument("--rounds", type=int, default=1)
     loop.add_argument("--episodes", type=int, default=30)
-    loop.add_argument("--steps", type=int, default=500)
+    loop.add_argument("--steps", type=int, default=6, help="Full episode policy-gradient iterations")
     loop.add_argument("--seed-start", type=int, default=0)
+    loop.add_argument("--backend", choices=["compact", "rsi"], default="compact")
+    loop.add_argument("--checkpoint", help="Optional initialized parent; otherwise resume deployed model")
+    loop.add_argument("--revision")
+    loop.add_argument("--warmup-steps", type=int, default=500)
+    task = sub.add_parser("task-train")
+    task.add_argument("--checkpoint")
+    task.add_argument("--backend", choices=["compact", "rsi"], default="compact")
+    task.add_argument("--steps", type=int, default=6)
+    task.add_argument("--seed-start", type=int, default=1000000)
+    task.add_argument("--dev-start", type=int, default=1010000)
+    task.add_argument("--batch-size", type=int, default=3)
+    task.add_argument("--dev-episodes", type=int, default=3)
+    task.add_argument("--revision")
+    improve = sub.add_parser("self-improve", help="RSI exploration → successful trajectory replay → task evaluation → deployment")
+    improve.add_argument("--backend", choices=["rsi", "compact"], default="rsi")
+    improve.add_argument("--checkpoint")
+    improve.add_argument("--revision")
+    improve.add_argument("--rounds", type=int, default=2)
+    improve.add_argument("--episodes", type=int, default=30)
+    improve.add_argument("--steps", type=int, default=100)
+    improve.add_argument("--seed-start", type=int, default=0)
+    improve.add_argument("--explore-episodes", type=int, help="Exploration scenes per task; release still uses --episodes")
+    improve.add_argument("--replay-only", action="store_true", help="Train on collected model successes without extra collection")
+    init = sub.add_parser("initialize-rsi", help="Optional frozen-head teacher initialization; kept distinct from model success replay")
+    init.add_argument("--dataset", required=True)
+    init.add_argument("--checkpoint", default="v1.0-0.8b")
+    init.add_argument("--revision")
+    init.add_argument("--steps", type=int, default=50)
+    init.add_argument("--lr", type=float, default=1e-3)
     sub.add_parser("status")
     return p
 
@@ -83,6 +113,17 @@ def main(argv=None):
     if getattr(a, "lr", None) is not None and (not math.isfinite(a.lr) or a.lr <= 0):
         raise SystemExit("--lr must be positive")
     store = Store(a.artifacts)
+    if a.command in {"cycle", "task-train", "self-improve", "initialize-rsi", "train"}:
+        with (store.root / "training.lock").open("a+") as guard:
+            try:
+                fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise SystemExit("Another training job is using this artifact store") from None
+            return _run(a, store)
+    return _run(a, store)
+
+
+def _run(a, store):
     if a.command == "collect":
         from .workflow import collect
         policy = None
@@ -122,7 +163,21 @@ def main(argv=None):
         result = promote(store, a.report)
     elif a.command == "cycle":
         from .workflow import cycle
-        result = cycle(store, a.rounds, a.episodes, a.steps, a.seed_start)
+        result = cycle(store, a.rounds, a.episodes, a.steps, a.seed_start,
+                       a.backend, a.checkpoint, a.revision, a.warmup_steps)
+    elif a.command == "task-train":
+        from .task_training import train_tasks
+        result = train_tasks(store, a.checkpoint, a.backend, a.steps, a.seed_start,
+                             a.dev_start, a.batch_size, a.dev_episodes, revision=a.revision)
+    elif a.command == "self-improve":
+        from .self_improvement import self_improve
+        result = self_improve(store, a.rounds, a.episodes, a.steps, a.checkpoint,
+                              a.backend, a.revision, a.seed_start, a.explore_episodes, a.replay_only)
+    elif a.command == "initialize-rsi":
+        from .self_improvement import fit_successes
+        from .task_rsi import RSILearner
+        result = fit_successes(store, RSILearner(a.checkpoint, a.lr, a.revision), a.dataset,
+                              steps=a.steps, dev_episodes=1, seed_start=0, initialization=True)
     elif a.command == "status":
         result = store.runs()
     elif a.command == "dashboard":

@@ -6,7 +6,6 @@ from pathlib import Path
 import numpy as np
 
 from .sim import POLICY_VERSION
-from .storage import write_json
 
 
 def fingerprint(path):
@@ -69,7 +68,6 @@ def promote(store, report_path):
     path = Path(report["candidate_checkpoint"])
     if fingerprint(path) != report["candidate_sha256"]:
         raise ValueError("Checkpoint has changed since evaluation")
-    champion = {"checkpoint": str(path.resolve()), "sha256": report["candidate_sha256"],
-                "evaluation": str(Path(report_path).resolve()), "report": report}
-    write_json(store.root / "champion.json", champion)
-    return champion
+    from .deployment import current, deploy
+    previous = current(store)
+    return deploy(store, report_path, (previous or {}).get("sha256"))

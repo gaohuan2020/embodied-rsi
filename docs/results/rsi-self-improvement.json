@@ -1,0 +1,319 @@
+{
+  "model": "RSI-Jev v1.0-0.8b",
+  "source_initialization": "explicit teacher preheat, 10 head updates; separately recorded",
+  "scene_distribution": "upstream-default (historical experiment)",
+  "collection": {
+    "schema_version": 1,
+    "objective": "successful_episode_replay",
+    "selection": "executed actions from model episodes with terminal success=1",
+    "episodes_total": 9,
+    "successful_episodes": 3,
+    "failed_episodes": 6,
+    "success_rate": 0.3333333333333333,
+    "groups": {
+      "transfer:1030002:0": "train",
+      "stack:1030000:0": "train",
+      "barrier:1030000:0": "train"
+    },
+    "cases": {
+      "train": 32,
+      "dev": 0,
+      "test": 0
+    },
+    "development": "independent complete tasks, not single-step labels",
+    "sha256": {
+      "train": "3a09628ecbbab21efecfa34b2a351a751ee1d5732ebe1863a4ba575db01718d3",
+      "dev": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "test": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "training": {
+    "objective": "successful_episode_replay",
+    "initial_success_rate": 0.3333333333333333,
+    "success_rate": 0.4444444444444444,
+    "selected_step": 25,
+    "training_samples": 32,
+    "successful_episodes": 3,
+    "train_seconds": 224.50405061999845
+  },
+  "metrics": [
+    {
+      "step": 0,
+      "dev_success_rate": 0.3333333333333333,
+      "dev_risk_count": 23
+    },
+    {
+      "step": 0,
+      "encoded_samples": 1,
+      "training_samples": 32
+    },
+    {
+      "step": 0,
+      "encoded_samples": 11,
+      "training_samples": 32
+    },
+    {
+      "step": 0,
+      "encoded_samples": 21,
+      "training_samples": 32
+    },
+    {
+      "step": 0,
+      "encoded_samples": 31,
+      "training_samples": 32
+    },
+    {
+      "step": 1,
+      "loss": 1.5673003196716309,
+      "grad_norm": 1.3414274454116821,
+      "training_samples": 32,
+      "successful_episodes": 3,
+      "steps_per_second": 0.01884472448185508
+    },
+    {
+      "step": 5,
+      "loss": 1.915867567062378,
+      "grad_norm": 0.750471830368042,
+      "training_samples": 32,
+      "successful_episodes": 3,
+      "steps_per_second": 0.09402840739034564
+    },
+    {
+      "step": 10,
+      "loss": 1.7030582427978516,
+      "grad_norm": 1.4283103942871094,
+      "training_samples": 32,
+      "successful_episodes": 3,
+      "steps_per_second": 0.1876329732048562
+    },
+    {
+      "step": 15,
+      "loss": 2.0464987754821777,
+      "grad_norm": 1.0006275177001953,
+      "training_samples": 32,
+      "successful_episodes": 3,
+      "steps_per_second": 0.28080187999969003
+    },
+    {
+      "step": 20,
+      "loss": 1.552797555923462,
+      "grad_norm": 1.6145838499069214,
+      "training_samples": 32,
+      "successful_episodes": 3,
+      "steps_per_second": 0.3735141781312296
+    },
+    {
+      "step": 25,
+      "loss": 1.4626779556274414,
+      "grad_norm": 1.148673415184021,
+      "training_samples": 32,
+      "successful_episodes": 3,
+      "steps_per_second": 0.4657872816120555
+    },
+    {
+      "step": 25,
+      "dev_success_rate": 0.4444444444444444,
+      "dev_risk_count": 32
+    },
+    {
+      "step": 30,
+      "loss": 1.3530869483947754,
+      "grad_norm": 1.050403356552124,
+      "training_samples": 32,
+      "successful_episodes": 3,
+      "steps_per_second": 0.3163965436726151
+    },
+    {
+      "step": 35,
+      "loss": 1.6419081687927246,
+      "grad_norm": 0.7754805088043213,
+      "training_samples": 32,
+      "successful_episodes": 3,
+      "steps_per_second": 0.36853263919019036
+    },
+    {
+      "step": 40,
+      "loss": 1.546459436416626,
+      "grad_norm": 0.8436647057533264,
+      "training_samples": 32,
+      "successful_episodes": 3,
+      "steps_per_second": 0.42044484552548056
+    },
+    {
+      "step": 45,
+      "loss": 1.6996501684188843,
+      "grad_norm": 0.7907535433769226,
+      "training_samples": 32,
+      "successful_episodes": 3,
+      "steps_per_second": 0.47231862874230934
+    },
+    {
+      "step": 50,
+      "loss": 1.4143835306167603,
+      "grad_norm": 1.36656653881073,
+      "training_samples": 32,
+      "successful_episodes": 3,
+      "steps_per_second": 0.5240994976105229
+    },
+    {
+      "step": 50,
+      "dev_success_rate": 0.2222222222222222,
+      "dev_risk_count": 27
+    },
+    {
+      "step": 55,
+      "loss": 1.7032368183135986,
+      "grad_norm": 0.7664768099784851,
+      "training_samples": 32,
+      "successful_episodes": 3,
+      "steps_per_second": 0.38926661215315034
+    },
+    {
+      "step": 60,
+      "loss": 1.7602872848510742,
+      "grad_norm": 0.8128578066825867,
+      "training_samples": 32,
+      "successful_episodes": 3,
+      "steps_per_second": 0.42427456550755416
+    },
+    {
+      "step": 65,
+      "loss": 1.2403416633605957,
+      "grad_norm": 1.031983733177185,
+      "training_samples": 32,
+      "successful_episodes": 3,
+      "steps_per_second": 0.4592214095889728
+    },
+    {
+      "step": 70,
+      "loss": 1.3764299154281616,
+      "grad_norm": 0.7571625709533691,
+      "training_samples": 32,
+      "successful_episodes": 3,
+      "steps_per_second": 0.49411854040886605
+    },
+    {
+      "step": 75,
+      "loss": 1.3905270099639893,
+      "grad_norm": 1.1594396829605103,
+      "training_samples": 32,
+      "successful_episodes": 3,
+      "steps_per_second": 0.5289185159145682
+    },
+    {
+      "step": 75,
+      "dev_success_rate": 0.2222222222222222,
+      "dev_risk_count": 33
+    },
+    {
+      "step": 80,
+      "loss": 1.3331646919250488,
+      "grad_norm": 0.6776552200317383,
+      "training_samples": 32,
+      "successful_episodes": 3,
+      "steps_per_second": 0.4454007251436623
+    },
+    {
+      "step": 85,
+      "loss": 1.5888384580612183,
+      "grad_norm": 1.2627406120300293,
+      "training_samples": 32,
+      "successful_episodes": 3,
+      "steps_per_second": 0.4729403336240591
+    },
+    {
+      "step": 90,
+      "loss": 1.1149237155914307,
+      "grad_norm": 1.0566636323928833,
+      "training_samples": 32,
+      "successful_episodes": 3,
+      "steps_per_second": 0.5004469620599846
+    },
+    {
+      "step": 95,
+      "loss": 1.5813597440719604,
+      "grad_norm": 1.3105970621109009,
+      "training_samples": 32,
+      "successful_episodes": 3,
+      "steps_per_second": 0.5279286118449902
+    },
+    {
+      "step": 100,
+      "loss": 1.4633724689483643,
+      "grad_norm": 1.2144031524658203,
+      "training_samples": 32,
+      "successful_episodes": 3,
+      "steps_per_second": 0.5553311554232931
+    },
+    {
+      "step": 100,
+      "dev_success_rate": 0.1111111111111111,
+      "dev_risk_count": 22
+    }
+  ],
+  "independent_evaluation": {
+    "pairs": 90,
+    "success_rate": 0.4444444444444444,
+    "champion_success_rate": 0.37777777777777777,
+    "paired_gain": 0.06666666666666667,
+    "gain_ci95": [
+      -0.06666666666666667,
+      0.2111111111111111
+    ],
+    "by_task": {
+      "barrier": {
+        "pairs": 30,
+        "candidate_success_rate": 0.3333333333333333,
+        "champion_success_rate": 0.36666666666666664,
+        "delta": -0.03333333333333333
+      },
+      "stack": {
+        "pairs": 30,
+        "candidate_success_rate": 0.5666666666666667,
+        "champion_success_rate": 0.36666666666666664,
+        "delta": 0.2
+      },
+      "transfer": {
+        "pairs": 30,
+        "candidate_success_rate": 0.43333333333333335,
+        "champion_success_rate": 0.4,
+        "delta": 0.03333333333333333
+      }
+    },
+    "risks": {
+      "collisions": {
+        "candidate": 0
+      },
+      "drops": {
+        "candidate": 98
+      },
+      "rejections": {
+        "candidate": 96
+      }
+    },
+    "mean_steps": 14.222222222222221,
+    "p95_latency_ms": 251.87686400434356,
+    "gate": {
+      "passed": false,
+      "checks": {
+        "enough_pairs": true,
+        "task_coverage": true,
+        "success_gain": true,
+        "confidence_interval": false,
+        "no_task_regression": false,
+        "no_risk_increase": false
+      },
+      "thresholds": {
+        "min_pairs": 90,
+        "gain": 0.05,
+        "regression": 0.02
+      }
+    },
+    "scope": "privileged-state / code-generated skills / partial simulator collision checks",
+    "candidate_sha256": "093ad9d88ae63296b9f06d21c2250315e881582cbe602134030cd8be38b6c013",
+    "champion_sha256": "83174990b5f3ea094f8415f46fd5142a0b296bd5e38c14c135504a97ccff55bd",
+    "model_backend": "rsi-jev"
+  },
+  "published": false,
+  "note": "Failure-guided continuous collection, failure-action filtering, randomized targets and automatic data thresholds were added after this experiment."
+}

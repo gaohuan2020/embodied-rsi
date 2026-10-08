@@ -42,7 +42,7 @@ def teacher(world):
     return baseline_phase(world)
 
 
-def execute(world, candidate):
+def execute(world, candidate, on_frame=None):
     shadow = world.clone()
     unsafe = shadow.unsafe_contacts
     try:
@@ -52,7 +52,9 @@ def execute(world, candidate):
     except (ValueError, RuntimeError) as exc:
         return False, f"unreachable: {exc}"
     unsafe = world.unsafe_contacts
-    for _ in world.motion(candidate.target, candidate.gripper, candidate.seconds, emit=False):
+    for _ in world.motion(candidate.target, candidate.gripper, candidate.seconds, emit=bool(on_frame)):
+        if on_frame:
+            on_frame(world)
         if world.unsafe_contacts > unsafe:
             return False, "collision"
     return True, None
@@ -85,13 +87,18 @@ def rollout_labels(world, options, horizon=4):
     return (p / p.sum()).tolist(), scores
 
 
-def episode(task, seed, policy=None, max_steps=20, label_mode="teacher", intervention=False):
+def episode(task, seed, policy=None, max_steps=20, label_mode="teacher", intervention=False,
+            rng=None, on_frame=None, on_step=None, randomize_scene=False):
     from embodied_jev.physics import RobotWorld
-    world = RobotWorld(task, seed)
+
+    from .scenes import DISTRIBUTION, scene_config
+    world = RobotWorld(task, seed, scene_config(task, seed) if randomize_scene else None)
     history, records, latencies = [], [], []
     started = time.perf_counter()
     failure = None
     drops = 0
+    if on_frame:
+        on_frame(world)
     for step in range(max_steps):
         if world.success():
             break
@@ -99,8 +106,8 @@ def episode(task, seed, policy=None, max_steps=20, label_mode="teacher", interve
             world.perturb("object_shift", [.015, -.01])
         state, options = state_for(world, history), menu_for(world)
         gold_key = teacher(world)
-        if not options or gold_key not in options:
-            failure = "no_valid_teacher_action"
+        if not options or (policy is None and gold_key not in options):
+            failure = "no_valid_action"
             break
         criteria = criteria_for(options)
         # Deterministic candidate-order augmentation; IDs remain bound to their actions.
@@ -112,15 +119,26 @@ def episode(task, seed, policy=None, max_steps=20, label_mode="teacher", interve
         probabilities = policy.predict(state, criteria) if policy else None
         latency = (time.perf_counter() - t) * 1000
         latencies.append(latency)
-        chosen = keys[int(np.argmax(probabilities))] if probabilities is not None else gold_key
+        if probabilities is not None:
+            probabilities = np.asarray(probabilities, dtype=float)
+            if (len(probabilities) != len(keys) or not np.isfinite(probabilities).all()
+                    or (probabilities < 0).any() or abs(probabilities.sum() - 1) > .001):
+                raise ValueError("Invalid policy probabilities")
+            probabilities = probabilities / probabilities.sum()
+            chosen = keys[int(rng.choice(len(keys), p=probabilities)) if rng is not None
+                          else int(np.argmax(probabilities))]
+        else:
+            chosen = gold_key
         if label_mode == "rollout":
             unordered_gold, branch_scores = rollout_labels(world, options)
             gold_by_key = dict(zip(options, unordered_gold))
             gold = [gold_by_key[k] for k in keys]
+        elif label_mode == "none":
+            branch_scores, gold = None, None
         else:
             branch_scores = None
             gold = [float(k == gold_key) for k in keys]
-        executed, rejection = execute(world, options[chosen])
+        executed, rejection = execute(world, options[chosen], on_frame)
         after = world.observe()
         lost = before["held"] and not after["held"] and chosen not in {"release", "withdraw"}
         drops += int(lost)
@@ -129,7 +147,12 @@ def episode(task, seed, policy=None, max_steps=20, label_mode="teacher", interve
                   "gold": gold, "label_source": label_mode, "branch_scores": branch_scores,
                   "action": options[chosen].serialise(), "before": before, "after": after,
                   "executed": executed, "rejection": rejection, "latency_ms": latency}
+        if getattr(policy, "last_model_probabilities", None) is not None:
+            record["model_probabilities"] = policy.last_model_probabilities.tolist()
+            record["exploration"] = policy.last_details
         records.append(record)
+        if on_step:
+            on_step(record)
         history.append({"choice": chosen, "executed": executed, "rejection": rejection,
                         "tcp_delta": (np.asarray(after["tcp"]) - before["tcp"]).round(5).tolist(),
                         "object_delta": (np.asarray(after["object"]) - before["object"]).round(5).tolist(),
@@ -145,6 +168,8 @@ def episode(task, seed, policy=None, max_steps=20, label_mode="teacher", interve
     success = world.success()
     group = f"{task}:{seed}:{int(intervention)}"
     return {"schema_version": 1, "task": task, "seed": seed, "group": group,
+            "scene_distribution": DISTRIBUTION if randomize_scene else "upstream-default",
+            "scene_config": world.scene_config, "scene_hash": world.scene_hash,
             "episode_id": hashlib.sha256(f"{group}:{started}".encode()).hexdigest()[:20],
             "policy_version": POLICY_VERSION, "observation_mode": "privileged", "control_mode": "skills",
             "success": success, "failure": None if success else failure or "budget_exhausted",
