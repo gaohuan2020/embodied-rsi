@@ -25,3 +25,5 @@ main{padding:24px;max-width:1900px}header{margin-bottom:18px}.panel{padding:16px
 .sim-controls .facts{display:block}.sim-controls .facts>div{min-width:0}.sim-controls .facts b{min-width:0}.control-grid label{min-width:0}input,select{min-width:0}
 
 .pipeline-stage.blocked{background:#322a23;border-color:#564936;color:#d5b994}
+
+.toggle-list label[hidden]{display:none!important}#study-panel[hidden]{display:none}#study-conclusion{color:var(--text)}

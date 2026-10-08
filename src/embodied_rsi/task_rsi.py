@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import random
 import shutil
+from collections import OrderedDict
 from pathlib import Path
 
 from .sim import INSTRUCTIONS
@@ -31,6 +32,7 @@ class RSILearner:
         self.model.eval()  # Consistent sampling / gradient probabilities: no dropout.
         self.params = list(self.model.scorer.parameters())
         self.optimizer = torch.optim.AdamW(self.params, lr=lr, weight_decay=0.)
+        self.feature_cache = OrderedDict()
 
     def logits(self, state, criteria, capture=False):
         from rsijev.contract import Question
@@ -82,8 +84,28 @@ class RSILearner:
         return {"loss": float(loss.detach()), "grad_norm": float(norm)}
 
     def predict(self, state, criteria):
+        return self.predict_with_head(self.model.scorer, state, criteria)
+
+    def predict_with_head(self, head, state, criteria):
+        from rsijev.encode import unpermute_logits
         with self.torch.no_grad():
-            return self.logits(state, criteria).softmax(-1).cpu().numpy().astype(float)
+            # Upstream "canonical" means the supplied order, not sorted IDs.
+            # Candidate order is part of the prompt and must be in the cache key.
+            canonical = criteria
+            key = dumps([state, list(criteria.items())])
+            if key not in self.feature_cache:
+                self.feature_cache[key] = self.logits(state, canonical, capture=True)
+                if len(self.feature_cache) > 512:
+                    self.feature_cache.popitem(last=False)
+            self.feature_cache.move_to_end(key)
+            frozen, perm, mask, count = self.feature_cache[key]
+            logits = head(**frozen).float()
+            if self.model.cfg.logit_cap:
+                cap = float(self.model.cfg.logit_cap)
+                logits = (cap * self.torch.tanh(logits / cap)).masked_fill(~mask, float("-inf"))
+            logits = unpermute_logits(logits, perm, mask)[0, :count]
+            p = logits.softmax(-1).cpu().numpy().astype(float)
+            return p
 
     def snapshot(self):
         return {k: v.detach().clone().cpu() for k, v in self.model.scorer.state_dict().items()}
@@ -123,7 +145,7 @@ class RSILearner:
             shutil.copy2(self.parent / "config.json", path / "config.json")
         self.tok.save_pretrained(path)
         self.meta.pop("calibration", None)
-        self.meta.update(backend="rsi-jev", robot_training=metadata)
+        self.meta.update(backend="rsi-jev", inference_dtype="fp32", robot_training=metadata)
         self.meta["spec"].update(freeze_base=True, option_order=self.enc.option_order,
                                  rl_extra={}, fit_extra={}, steps=metadata["steps"],
                                  batch_size=metadata["batch_size"], seed=metadata["train_seed_range"][0],

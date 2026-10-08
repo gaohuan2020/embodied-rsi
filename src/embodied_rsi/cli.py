@@ -79,17 +79,30 @@ def parser():
     improve.add_argument("--checkpoint")
     improve.add_argument("--revision")
     improve.add_argument("--rounds", type=int, default=2)
-    improve.add_argument("--episodes", type=int, default=30)
+    improve.add_argument("--episodes", type=int, default=90)
     improve.add_argument("--steps", type=int, default=100)
     improve.add_argument("--seed-start", type=int, default=0)
     improve.add_argument("--explore-episodes", type=int, help="Exploration scenes per task; release still uses --episodes")
     improve.add_argument("--replay-only", action="store_true", help="Train on collected model successes without extra collection")
+    improve.add_argument("--tasks", nargs="+", choices=["transfer", "stack", "barrier"], default=["transfer"])
+    improve.add_argument("--randomize-scene", action="store_true", help="Randomize destination as well as source")
+    improve.add_argument("--max-steps", type=int, default=20)
+    improve.add_argument("--dev-episodes", type=int, default=10)
     init = sub.add_parser("initialize-rsi", help="Optional frozen-head teacher initialization; kept distinct from model success replay")
     init.add_argument("--dataset", required=True)
     init.add_argument("--checkpoint", default="v1.0-0.8b")
     init.add_argument("--revision")
     init.add_argument("--steps", type=int, default=50)
     init.add_argument("--lr", type=float, default=1e-3)
+    study = sub.add_parser("transfer-study", help="Frozen multi-round, success-only transfer experiment")
+    study.add_argument("--backend", choices=["rsi", "compact"], default="rsi")
+    study.add_argument("--checkpoint")
+    study.add_argument("--rounds", type=int, default=3)
+    study.add_argument("--explore-episodes", type=int, default=60)
+    study.add_argument("--episodes", type=int, default=90)
+    study.add_argument("--audit-episodes", type=int, default=90)
+    study.add_argument("--steps", type=int, default=100)
+    study.add_argument("--max-steps", type=int, default=20)
     sub.add_parser("status")
     return p
 
@@ -113,7 +126,7 @@ def main(argv=None):
     if getattr(a, "lr", None) is not None and (not math.isfinite(a.lr) or a.lr <= 0):
         raise SystemExit("--lr must be positive")
     store = Store(a.artifacts)
-    if a.command in {"cycle", "task-train", "self-improve", "initialize-rsi", "train"}:
+    if a.command in {"cycle", "task-train", "self-improve", "initialize-rsi", "train", "transfer-study"}:
         with (store.root / "training.lock").open("a+") as guard:
             try:
                 fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -172,12 +185,17 @@ def _run(a, store):
     elif a.command == "self-improve":
         from .self_improvement import self_improve
         result = self_improve(store, a.rounds, a.episodes, a.steps, a.checkpoint,
-                              a.backend, a.revision, a.seed_start, a.explore_episodes, a.replay_only)
+                              a.backend, a.revision, a.seed_start, a.explore_episodes, a.replay_only,
+                              a.tasks, a.randomize_scene, a.max_steps, a.dev_episodes)
     elif a.command == "initialize-rsi":
         from .self_improvement import fit_successes
         from .task_rsi import RSILearner
         result = fit_successes(store, RSILearner(a.checkpoint, a.lr, a.revision), a.dataset,
                               steps=a.steps, dev_episodes=1, seed_start=0, initialization=True)
+    elif a.command == "transfer-study":
+        from .transfer_study import transfer_study
+        result = transfer_study(store, a.rounds, a.explore_episodes, a.steps, a.episodes,
+                                a.audit_episodes, a.backend, a.checkpoint, a.max_steps)
     elif a.command == "status":
         result = store.runs()
     elif a.command == "dashboard":

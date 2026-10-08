@@ -119,6 +119,7 @@ def deploy(store, report_path, expected_sha=None, rsi_python=None, registry_back
                      "previous_version": (previous or {}).get("version"), "warmup": "passed"}
             meta = json.loads((checkpoint / "meta.json").read_text())
             model["backend"] = "compact" if meta.get("backend") == "compact-numpy" else "rsi"
+            model["tasks"] = report["gate"]["thresholds"].get("tasks", ["transfer", "stack", "barrier"])
             write_json(store.run_dir(run) / "deployment.json", model)
             write_json(store.root / f"champion-{model['backend']}.json", model)
             write_json(store.root / "champion.json", model)

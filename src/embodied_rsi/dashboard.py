@@ -25,16 +25,20 @@ from .storage import RUN_ID, write_json
 
 
 class JobRequest(BaseModel):
-    action: Literal["cycle", "collect", "train", "evaluate", "task-train", "self-improve", "initialize-rsi"]
+    action: Literal["cycle", "collect", "train", "evaluate", "task-train", "self-improve", "initialize-rsi", "transfer-study"]
     backend: Literal["compact", "rsi"] = "compact"
     dataset: str | None = None
     checkpoint: str | None = None
-    episodes: int = Field(default=30, ge=1, le=300)
+    episodes: int = Field(default=90, ge=1, le=300)
     explore_episodes: int = Field(default=30, ge=1, le=300)
     steps: int = Field(default=6, ge=1, le=20000)
     rounds: int = Field(default=1, ge=1, le=5)
     seed_start: int = Field(default=0, ge=0, le=10**8)
     replay_only: bool = False
+    tasks: list[Literal["transfer", "stack", "barrier"]] = Field(default_factory=lambda: ["transfer"], min_length=1)
+    randomize_scene: bool = False
+    max_steps: int = Field(default=20, ge=1, le=100)
+    audit_episodes: int = Field(default=90, ge=30, le=300)
 
 
 class Control(BaseModel):
@@ -46,8 +50,8 @@ class Control(BaseModel):
     continuous: bool = False
     max_steps: int = Field(default=20, ge=1, le=100)
     checkpoint: str | None = None
-    randomize_scene: bool = True
-    random_tasks: bool = True
+    randomize_scene: bool = False
+    random_tasks: bool = False
     auto_train: bool = True
     train_every: int = Field(default=30, ge=1, le=10000)
     min_successes: int = Field(default=5, ge=1, le=1000)
@@ -80,7 +84,16 @@ class Jobs:
         if not interpreter or not Path(interpreter).is_file():
             raise ValueError("Configure --rsi-python before launching RSI jobs")
         args = [interpreter, "-m", "embodied_rsi.cli", "--artifacts", str(self.store.root), request.action]
-        if request.action in {"cycle", "task-train", "self-improve"}:
+        if request.action == "transfer-study":
+            if request.tasks != ["transfer"] or request.episodes < 90 or request.rounds < 2:
+                raise ValueError("搬运测试只接受 transfer、至少 2 轮和 90 个发布场景")
+            if request.checkpoint:
+                raise ValueError("清空后的测试从原始模型开始，不接受历史检查点")
+            args += ["--backend", request.backend, "--rounds", str(request.rounds),
+                     "--explore-episodes", str(request.explore_episodes), "--steps", str(request.steps),
+                     "--episodes", str(request.episodes), "--audit-episodes", str(request.audit_episodes),
+                     "--max-steps", str(request.max_steps)]
+        elif request.action in {"cycle", "task-train", "self-improve"}:
             if request.steps > 1000 and request.action != "self-improve":
                 raise ValueError("任务训练每轮最多 1000 次整局更新")
             args += ["--backend", request.backend]
@@ -92,13 +105,20 @@ class Jobs:
                 if (meta.get("backend") == "compact-numpy") != (request.backend == "compact"):
                     raise ValueError("Checkpoint backend does not match selected backend")
                 args += ["--checkpoint", str(path)]
-        if request.action in {"cycle", "self-improve"}:
+        if request.action == "transfer-study":
+            pass
+        elif request.action in {"cycle", "self-improve"}:
             if request.episodes < 30:
                 raise ValueError("自动部署评测每任务至少需要 30 个新场景")
             args += ["--rounds", str(request.rounds), "--episodes", str(request.episodes),
                      "--steps", str(request.steps), "--seed-start", str(request.seed_start)]
             if request.action == "self-improve":
-                args += ["--explore-episodes", str(request.explore_episodes)]
+                if request.episodes * len(set(request.tasks)) < 90:
+                    raise ValueError("独立发布评测总计至少 90 个新场景；单任务请设置 90")
+                args += ["--explore-episodes", str(request.explore_episodes), "--tasks", *request.tasks,
+                         "--max-steps", str(request.max_steps)]
+                if request.randomize_scene:
+                    args += ["--randomize-scene"]
                 if request.replay_only:
                     args += ["--replay-only"]
         elif request.action == "task-train":
@@ -107,7 +127,8 @@ class Jobs:
             args += ["--steps", str(request.steps), "--seed-start", str(suite["train"]),
                      "--dev-start", str(suite["dev"])]
         elif request.action == "collect":
-            args += ["--episodes", str(request.episodes), "--seed-start", str(request.seed_start)]
+            args += ["--episodes", str(request.episodes), "--seed-start", str(request.seed_start),
+                     "--tasks", *request.tasks]
         else:
             # Only paths selected from our artifact catalogue, never arbitrary executable arguments.
             name = request.dataset or ""

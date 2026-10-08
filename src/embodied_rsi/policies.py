@@ -35,7 +35,9 @@ class HTTPPolicy:
 class InProcessRSI:
     def __init__(self, checkpoint, device=None, revision=None):
         from rsijev import Decider
-        self.decider = Decider(checkpoint, device=device, revision=revision)
+        # Match the differentiable learner: otherwise a bf16 serving tower can
+        # choose a different argmax from the fp32 model used for development.
+        self.decider = Decider(checkpoint, device=device, dtype="fp32", revision=revision)
 
     def predict(self, state, criteria):
         answers = self.decider.decide(json.dumps(state, ensure_ascii=False), {

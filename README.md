@@ -1,29 +1,44 @@
 # Embodied RSI
 
-把 [EmbodiedJev](https://github.com/FBddcz/embodied-jev) 的 MuJoCo 机械臂仿真与 [RSI-Jev](https://github.com/Shanghua-Gao/RSI-Jev) 的可训练决策模型连接起来。
+连接 [EmbodiedJev](https://github.com/FBddcz/embodied-jev) 的 MuJoCo 机械臂仿真与 [RSI-Jev](https://github.com/Shanghua-Gao/RSI-Jev) 的决策模型。
 
-**连续随机任务 → 收集模型成功轨迹 → 达到数据阈值后训练 → 独立完成率评测 → 达标自动部署 → 下一局使用新模型。**
+当前实验只做一项任务：**把物体放进盘子**。旧轨迹、数据集、指标、微调检查点、部署版本和旧结果报告已清空。原始 RSI 预训练权重作为新实验起点。
 
-![机械臂模拟](docs/assets/simulation.png)
-![训练与任务表现](docs/assets/dashboard.png)
+**自主尝试 → 物理判定成功 → 收集成功动作 → 训练 → 新场景配对评测 → 达标更新 → 最终同场景审计。**
 
-## 已实现
+## 本轮测试
 
-- `/simulation`：实际 MuJoCo / Franka Panda 画面；模型请求选择技能，物理环境执行和判定成功。1024×640、4× MSAA、阴影、腕部摄像头、暂停、单步、停止和本局回放。
-- 连续执行：成功、失败或用尽动作预算后重新初始化；每局默认 20 步，可调整。三种任务打乱轮换，随机化源方块、目标区位置和障碍高度。种子、场景参数、哈希、模型版本与完整动作均保存。
-- 失败引导探索：空抓、拒绝、失抓和停滞经验调整后续采样，保留原模型概率与探索概率。独立发布评测使用模型原始决策。
-- 自动训练：默认新增 **30 局完整轨迹且至少 5 局成功** 后，启动 100 次更新。训练期间继续采集；后台忙时等待；已消费的数据不重复触发。前端可调整阈值和预算。
-- RSI 成功轨迹回放：只使用模型实际完成的轨迹及实际执行动作，过滤其中被拒、空抓和失抓等失败动作。教师示范初始化单独标记；没有成功数据时跳过训练。
-- **按完整任务完成率选择检查点**，loss 用于训练诊断。开发完成率退化时保留之前更好的版本。
-- 至少 90 对新随机场景，比较候选与父模型；完成率、统计区间、每项任务与风险门槛全部通过才自动部署。模型校验、加载和推理预热后原子切换；一局执行期间固定版本。
-- `/training`：完成率与 loss 并排、检查点摘要、真实样本和失败轨迹、发布门槛、资源和异常事件；历史实验与低频诊断折叠。
-- 可选 Compact CPU 参考模型及整局 REINFORCE。RSI GPU 推理通过隔离进程 JSON-lines 请求。服务重启可恢复之前仍获授权的连续采集；点击停止后不会恢复。
+冷启动实测：原始 RSI 在 12 次随机探索中成功 1 次，另 11 次失败。探索完成率为 8.3%，这不是确定性独立评测成绩。没有使用教师示范初始化。
 
-真实 RSI 小规模实验：模型探索 9 局完成 3 局，32 个实际动作样本训练后，90 个独立场景上的完成率从 **37.8% 到 44.4%**。但提升的区间包含下降，越障任务略退化、失抓增多，候选**没有发布**。CPU 参考模型的 100% 成绩单独报告。见 [验证记录](docs/VALIDATION.md)。
+| 阶段 | 本次预算 |
+|---|---|
+| 任务与控制 | 搬运入盘，最多 20 个技能动作 |
+| 初态 | 源物体位置在中心附近 ±2.5cm 随机；目标盘位置固定 |
+| 学习轮数 | 3 轮 |
+| 每轮自主采集 | 30 局；可继续利用前面实际成功轨迹 |
+| 每轮训练 | 100 次 RSI 决策头更新，冻结文本塔 |
+| 开发选模 | 10 个独立完整任务，按完成率选择检查点 |
+| 每轮发布评测 | 90 对新场景，候选与当前版本使用同初态 |
+| 最终统一审计 | 本次快速验证为 30 个保留场景；正式默认 90 个 |
 
-当前模型使用结构化仿真状态选择九种技能，程序负责航点和 IK。图像由物理引擎渲染；没有使用图像生成模型模拟机械臂，也尚未实现从相机像素直接控制或真机部署。
+所有轮次结束后才揭示最终审计集。分别画候选曲线与实际发布版本曲线；下降、持平和未发布都保留。**不保证、不强制成功率逐轮上升。** 单次通过发布门槛也不能证明整个学习曲线严格上升。
 
-## 安装与启动
+完整协议、种子边界和判定见 [测试计划](docs/TEST_PLAN.md)。实际结果见 [验证记录](docs/VALIDATION.md)。
+
+**本次实测未观察到逐轮提升，未部署新模型。**
+
+| 学习轮 | 本轮采集成功 | 训练 loss（首 → 末） | 独立发布评测 | 同场景最终审计 |
+|---|---|---|---|---|
+| 原始 V0 | 冷启动 1/12 | — | 各轮对照均 0/90 | 0/30 |
+| V1 | 2/30 | 2.108 → 1.301 | 0/90 | 0/30 |
+| V2 | 0/30 | 1.939 → 1.345 | 0/90 | 0/30 |
+| V3 | 0/30 | 2.065 → 1.239 | 0/90 | 0/30 |
+
+累计只有 3 条成功轨迹、29 个过滤后的动作样本。三轮开发完成率均未改善，选中的都是第 0 步权重；loss 下降没有转化为任务成功率提升。完整数值与模型哈希见 [实验结果](docs/results/transfer-study.json)。
+
+![重置后的真实三轮训练报表](docs/assets/dashboard.png)
+
+## 安装与使用
 
 Python 3.11+、Git、uv；前端不需要 Node.js 或外部 CDN。
 
@@ -34,52 +49,43 @@ python3 scripts/bootstrap.py --rsi
 .venv/bin/embodied-rsi dashboard --port 8091 --rsi-python "$PWD/.venv-rsi/bin/python"
 ```
 
-机械臂模拟：http://127.0.0.1:8091/simulation
+[机械臂模拟](http://127.0.0.1:8091/simulation) · [训练与测试报表](http://127.0.0.1:8091/training)
 
-训练报表：http://127.0.0.1:8091/training
-
-RSI 自我提升默认为固定 revision 的文本单出口 `v1.0-0.8b`。首次启动会下载权重，需要相应 GPU 与存储。已验证 Linux / aarch64 / NVIDIA GB10；上游 commit 固定在 `upstreams.lock.json`。只有 CPU 时省略 `--rsi` 和 `--rsi-python`，选择 Compact 参考策略验证流程。
-
-Linux 无窗口渲染默认 EGL；CPU 可安装 Mesa / EGL，必要时设置 `LIBGL_ALWAYS_SOFTWARE=1`。CI 使用 OSMesa。依赖固定在 `constraints-simulation.txt`。
-
-在模拟页选择 RSI 自动更新，启用连续采集、探索和自动训练，设置阈值后开始。可选已有 RSI 检查点作为起点；通过发布后下一局自动读取新的 RSI 版本。弱模型可能长时间无法成功，可在训练页显式进行示范初始化，或继续探索；不会制造成功样本。
-
-## 命令行训练
+训练页可启动「搬运入盘验证」。命令行等价运行：
 
 ```bash
-# 探索、成功轨迹训练、独立随机评测与条件部署
-.venv-rsi/bin/embodied-rsi self-improve --rounds 2 --explore-episodes 30 --episodes 30 --steps 100
-
-# 已经有持续采集数据，直接回放训练
-.venv-rsi/bin/embodied-rsi self-improve --replay-only --rounds 1 --episodes 30 --steps 100 \
-  --checkpoint artifacts/runs/RSI_TRAIN_ID/checkpoint
-
-# 可选的示范初始化，与模型自采成功数据分开标记
-.venv-rsi/bin/embodied-rsi initialize-rsi --dataset artifacts/datasets/TEACHER_DATASET \
-  --checkpoint v1.0-0.8b --steps 10
-
-# 可选的整局奖励 REINFORCE 参考链路
-.venv/bin/embodied-rsi cycle --backend compact --rounds 1 --episodes 30 --steps 6
+.venv-rsi/bin/embodied-rsi transfer-study --rounds 3 --explore-episodes 30 \
+  --steps 100 --episodes 90 --audit-episodes 30 --max-steps 20
 ```
 
-RSI 成功回放冻结文本塔，缓存特征并更新决策头；保存上游兼容检查点。开发和发布都执行完整任务。自动流程用 SQLite 持久分配独立训练／开发／发布种子，发布场景不参与训练。采集随机分布版本为 `workspace-random-v1`，实际可达性和碰撞检查仍由上游执行。
+需要新 `artifacts/` 或用全新目录 `--artifacts artifacts-transfer-new`；已有部署时研究命令拒绝复用旧基线。默认正式审计预算为 90。
 
-## 自动发布门槛
+继续单任务自动学习：
 
-| 指标 | 门槛 |
+```bash
+.venv-rsi/bin/embodied-rsi self-improve --tasks transfer --rounds 3 \
+  --explore-episodes 60 --episodes 90 --steps 100
+```
+
+模拟页默认仅搬运入盘，支持连续执行、暂停、单步、停止、相机和回放；达到新增 30 局且至少 5 局成功后可自动训练。目标位置随机化暂不进入本轮实验，后续单独测试泛化分布。
+
+## 训练与发布
+
+模型请求选择九种技能，程序负责航点／IK，MuJoCo 执行物理并独立判定位置、稳定支撑、释放与撤离。模型输入为当前结构化状态；画面来自 MuJoCo 渲染。
+
+失败记录用于调整探索，发布评测使用原模型确定性决策。只回放模型实际成功轨迹中的执行动作；过滤被拒、空抓、失抓和未持物搬运动作。loss 用于训练诊断，完整任务完成率决定保存哪一步。冻结塔缓存严格保留候选顺序；训练与线上统一 FP32，并验证预测一致。
+
+| 发布门槛 | 要求 |
 |---|---|
-| 新场景配对 | 至少 90 对，三项任务各至少 30 对 |
-| 完整任务完成率提升 | 至少 5 个百分点 |
-| 配对 bootstrap 95% 区间 | 提升下界大于 0 |
-| 每项任务退化 | 不超过 2 个百分点 |
-| 碰撞、失抓、动作拒绝 | 各项总数不增加 |
-| 模型检查 | 评测哈希一致、真实加载和推理预热通过 |
+| 独立配对 | 当前仅 transfer，至少 90 对 |
+| 完成率提升 | ≥5 个百分点 |
+| 95% 配对 bootstrap 区间 | 提升下界 >0 |
+| 任务与风险 | 无超限任务退化，碰撞／失抓／拒绝不增加 |
+| 模型 | 评测哈希一致、实际加载与推理预热通过 |
 
-RSI 与 Compact 分别保留注册表，避免用 CPU 成绩代替 RSI 表现。通过门槛才切换部署版本，失败或过期评测不会覆盖当前模型。每轮训练不保证进步。
+通过才自动部署，下一局读取新模型，运行中的一局固定版本。报告与注册表写明验证过的任务范围；单任务成绩不能宣称覆盖堆叠或越障。
 
-`POST /v1/systemone` 返回当前活动部署模型的动作概率和实际 `model_version`。模型概率是动作偏好，不能当成整局成功概率。
-
-数据、权重、SQLite 和作业日志位于被忽略的 `artifacts/`。公开仓库包含代码、截图和脱敏报告。后台训练互斥，页面关闭不影响训练；本地工作台限制 Host 和跨 Origin 写请求，远程可使用 SSH 转发。当前部署目标为本地仿真服务。
+数据、模型、作业和 SQLite 存储在忽略的 `artifacts/`。冻结协议为 `runs/study-*/protocol.json`，每轮配对结果为 `runs/evaluate-*/report.json`，最终结果为 `study-latest.json`。本地界面限制 Host 与跨 Origin 写请求，远程可用 SSH 转发。当前部署目标为仿真服务。
 
 ## 开发
 
@@ -88,6 +94,6 @@ RSI 与 Compact 分别保留注册表，避免用 CPU 成绩代替 RSI 表现。
 MUJOCO_GL=egl .venv/bin/pytest -q
 ```
 
-[架构与 API](docs/ARCHITECTURE.md) · [验证记录](docs/VALIDATION.md) · [实施路线](docs/ROADMAP.md)
+[架构与 API](docs/ARCHITECTURE.md) · [实施路线](docs/ROADMAP.md)
 
-本仓库代码使用 MIT。上游代码、模型、机器人资产与数据分别遵循其许可证；权重未包含在仓库。
+本仓库使用 MIT；上游代码、权重、资产分别遵循其许可证，权重不包含在仓库。

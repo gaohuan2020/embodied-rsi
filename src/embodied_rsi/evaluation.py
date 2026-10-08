@@ -19,7 +19,10 @@ def fingerprint(path):
     return digest.hexdigest()
 
 
-def paired_report(candidate, champion, min_pairs=90, gain=.05, regression=.02):
+def paired_report(candidate, champion, min_pairs=90, gain=.05, regression=.02, expected_tasks=None):
+    expected_tasks = set(expected_tasks or ("transfer", "stack", "barrier"))
+    if not expected_tasks or not expected_tasks <= {"transfer", "stack", "barrier"}:
+        raise ValueError("Invalid release task scope")
     def key(row):
         return row["group"]
 
@@ -44,7 +47,7 @@ def paired_report(candidate, champion, min_pairs=90, gain=.05, regression=.02):
                        "champion": sum(old[k][metric] for k in groups)}
              for metric in ("collisions", "drops", "rejections")}
     checks = {"enough_pairs": len(groups) >= min_pairs,
-              "task_coverage": set(by_task) == {"transfer", "stack", "barrier"} and
+              "task_coverage": set(by_task) == expected_tasks and
                                all(v["pairs"] >= 30 for v in by_task.values()),
               "success_gain": float(delta.mean()) >= gain,
               "confidence_interval": ci[0] > 0,
@@ -56,7 +59,8 @@ def paired_report(candidate, champion, min_pairs=90, gain=.05, regression=.02):
             "mean_steps": float(np.mean([new[k]["steps"] for k in groups])),
             "p95_latency_ms": float(np.percentile([new[k]["latency_p95_ms"] for k in groups], 95)),
             "gate": {"passed": all(checks.values()), "checks": checks,
-                     "thresholds": {"min_pairs": min_pairs, "gain": gain, "regression": regression}},
+                     "thresholds": {"min_pairs": min_pairs, "gain": gain, "regression": regression,
+                                    "tasks": sorted(expected_tasks)}},
             "scope": "privileged-state / code-generated skills / partial simulator collision checks"}
 
 

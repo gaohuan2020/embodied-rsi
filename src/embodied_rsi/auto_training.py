@@ -31,8 +31,10 @@ class AutoTrainer:
         if checkpoint and Path(checkpoint).is_dir():
             parent = Path(checkpoint).parent.name
         try:
+            tasks = ["transfer", "stack", "barrier"] if config.get("random_tasks") else [config.get("task", "transfer")]
             job = self.jobs.start(self.request_type(action="self-improve", backend=backend, checkpoint=parent,
-                episodes=30, steps=config["train_steps"], rounds=1, replay_only=True))
+                episodes=90 // len(tasks), steps=config["train_steps"], rounds=1, replay_only=True,
+                tasks=tasks, randomize_scene=config.get("randomize_scene", False), max_steps=config.get("max_steps",20)))
         except ValueError as exc:
             self.state.update(status="waiting", message=str(exc))
             return dict(self.state)

@@ -72,7 +72,7 @@ def evaluate(store, candidate, candidate_path, champion, champion_name, tasks, s
                     f.flush()
                     store.event(run_id, "pair", {"task": task, "seed": seed,
                         "candidate_success": a["success"], "champion_success": b["success"]})
-        report = paired_report(new, old)
+        report = paired_report(new, old, expected_tasks=tasks)
         if fingerprint(candidate_path) != candidate_sha or (
                 champion_sha and fingerprint(champion_path) != champion_sha):
             raise ValueError("Checkpoint changed during paired evaluation")

@@ -1,6 +1,7 @@
 """Outcome-filtered RSI self imitation, with task success selecting and releasing models."""
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import time
@@ -8,7 +9,6 @@ from pathlib import Path
 
 import numpy as np
 
-from .compact import CompactPolicy
 from .deployment import current, deploy, load_policy
 from .monitor import Monitor
 from .sim import INSTRUCTIONS, episode
@@ -17,7 +17,15 @@ from .task_training import TASKS, CompactLearner, task_score
 from .workflow import evaluate, reserve_suite
 
 
-def success_dataset(files, output):
+class FrozenParentPolicy:
+    def __init__(self, learner, head):
+        self.learner, self.head = learner, head
+
+    def predict(self, state, criteria):
+        return self.learner.predict_with_head(self.head, state, criteria)
+
+
+def success_dataset(files, output, tasks=None):
     """Only actually completed model trajectories; never substitute teacher decisions."""
     output = Path(output)
     if output.exists():
@@ -30,6 +38,8 @@ def success_dataset(files, output):
                 if not line.endswith("\n"):
                     break  # A continuous collector may currently be appending its next episode.
                 ep = json.loads(line)
+                if tasks and ep["task"] not in tasks:
+                    continue
                 total += 1
                 if not ep["success"]:
                     continue
@@ -78,7 +88,8 @@ def success_dataset(files, output):
 
 def fit_successes(store, learner, dataset, steps=100, dev_start=1010000, dev_episodes=3,
                   seed_start=1000000, batch_size=16, backend="rsi", initialization=False,
-                  randomize_scene=False):
+                  randomize_scene=False, tasks=None, max_steps=20):
+    tasks = tuple(tasks or TASKS)
     dataset = Path(dataset)
     manifest = json.loads((dataset / "manifest.json").read_text())
     if hashlib.sha256((dataset / "train.jsonl").read_bytes()).hexdigest() != manifest["sha256"]["train"]:
@@ -88,7 +99,8 @@ def fit_successes(store, learner, dataset, steps=100, dev_start=1010000, dev_epi
         raise ValueError("No successful model trajectories; train is skipped")
     objective = "supervised_initialization" if initialization else "successful_episode_replay"
     config = {"objective": objective, "steps": steps, "batch_size": batch_size,
-              "lr": learner.lr, "randomize_scene": randomize_scene,
+              "lr": learner.lr, "randomize_scene": randomize_scene, "tasks": list(tasks),
+              "max_steps": max_steps,
               "dataset": str(dataset), "dataset_sha256": manifest["sha256"],
               "train_seed_range": [seed_start, seed_start + 10000],
               "dev_seed_range": [dev_start, dev_start + dev_episodes]}
@@ -98,7 +110,7 @@ def fit_successes(store, learner, dataset, steps=100, dev_start=1010000, dev_epi
     try:
         with Monitor(store, run) as monitor:
             def validate(step):
-                rows = [episode(task, seed, learner, label_mode="none", randomize_scene=randomize_scene) for task in TASKS
+                rows = [episode(task, seed, learner, max_steps=max_steps, label_mode="none", randomize_scene=randomize_scene) for task in tasks
                         for seed in range(dev_start, dev_start + dev_episodes)]
                 score = task_score(rows)
                 monitor.metric(step, dev_success_rate=score[0], dev_risk_count=-score[1])
@@ -144,10 +156,14 @@ def fit_successes(store, learner, dataset, steps=100, dev_start=1010000, dev_epi
         raise
 
 
-def self_improve(store, rounds=2, episodes=30, steps=100, checkpoint=None, backend="rsi",
-                 revision=None, seed_start=0, explore_episodes=None, replay_only=False):
-    """Explore with RSI, replay completed trajectories, select by full task success, deploy if better."""
-    if episodes < 30 or episodes > 300 or steps < 1 or steps > 20000:
+def self_improve(store, rounds=2, episodes=90, steps=100, checkpoint=None, backend="rsi",
+                 revision=None, seed_start=0, explore_episodes=None, replay_only=False, tasks=None,
+                 randomize_scene=False, max_steps=20, dev_episodes=10):
+    """Explore, replay successful trajectories, select by task success, deploy if better."""
+    tasks = tuple(tasks or ("transfer",))
+    if not tasks or len(set(tasks)) != len(tasks) or not set(tasks) <= set(TASKS):
+        raise ValueError("Invalid self-improvement task scope")
+    if episodes < 30 or episodes > 300 or episodes * len(tasks) < 90 or steps < 1 or steps > 20000:
         raise ValueError("Need 30–300 scenes per task and 1–20000 replay updates")
     if backend == "rsi" and checkpoint is None and revision is None:
         revision = "f9248caceb89caf2e6c968ea33bf0d6eb7f957b0"
@@ -157,7 +173,8 @@ def self_improve(store, rounds=2, episodes=30, steps=100, checkpoint=None, backe
     run = store.create("self-improve", backend, {"objective": "successful_episode_replay", "rounds": rounds,
         "episodes": episodes, "explore_episodes": explore_episodes,
         "steps": steps, "checkpoint": str(checkpoint), "revision": revision,
-        "replay_only": replay_only, "scene_distribution": "workspace-random-v1"})
+        "replay_only": replay_only, "tasks": list(tasks), "max_steps": max_steps,
+        "scene_distribution": "workspace-random-v1" if randomize_scene else "upstream-default"})
     results, files, collections = [], [], set()
     # Replay actual previous successful model data; failed episodes remain available to inspect.
     for prior in store.runs():
@@ -187,6 +204,15 @@ def self_improve(store, rounds=2, episodes=30, steps=100, checkpoint=None, backe
                     learner = RSILearner(parent or "v1.0-0.8b", revision=revision)
                 else:
                     learner = CompactLearner(parent, .08)
+                # The frozen tower is shared; baseline and candidate have separate
+                # heads. This preserves the exact initial model at much lower cost.
+                if backend == "rsi":
+                    parent_head = copy.deepcopy(learner.model.scorer).eval()
+                    parent_policy = FrozenParentPolicy(learner, parent_head)
+                    parent_path = str(learner.parent)
+                else:
+                    parent_policy = copy.deepcopy(learner.policy)
+                    parent_path = str(parent or "untrained-compact")
                 collection = store.create("explore", backend, {"checkpoint": str(parent or "v1.0-0.8b"),
                     "mode": "existing_model_replay" if replay_only else "sampled_model_actions",
                     "scene_suite": suite, "round": index + 1})
@@ -199,10 +225,10 @@ def self_improve(store, rounds=2, episodes=30, steps=100, checkpoint=None, backe
                 exploratory = ExploringPolicy(learner, memory)
                 complete, count = 0, 0
                 with Monitor(store, collection), (store.run_dir(collection) / "episodes.jsonl").open("w") as output:
-                    for task in (() if replay_only else TASKS):
+                    for task in (() if replay_only else tasks):
                         for seed in range(suite["train"], suite["train"] + explore_episodes):
                             result = episode(task, seed, exploratory, label_mode="none", rng=rng,
-                                             randomize_scene=True)
+                                             randomize_scene=randomize_scene, max_steps=max_steps)
                             result.update(source_policy=backend, checkpoint=str(parent or "v1.0-0.8b"))
                             result["exploration_update"] = memory.observe(result)
                             output.write(dumps(result) + "\n")
@@ -216,7 +242,7 @@ def self_improve(store, rounds=2, episodes=30, steps=100, checkpoint=None, backe
                                                   "success_rate": complete / count if count else 0., "failed_episodes": count - complete})
                 files.append(store.run_dir(collection) / "episodes.jsonl")
                 dataset = store.root / "datasets" / f"success-{collection}"
-                manifest = success_dataset(files, dataset)
+                manifest = success_dataset(files, dataset, tasks)
                 result = {"round": index + 1, "collection": collection, "dataset": str(dataset),
                           "exploration_success_rate": complete / count if count else None,
                           "successful_episodes": manifest["successful_episodes"], "scene_suite": suite}
@@ -227,27 +253,24 @@ def self_improve(store, rounds=2, episodes=30, steps=100, checkpoint=None, backe
                 else:
                     store.event(run, "stage", {"stage": "success_replay_training", "round": index + 1})
                     training = fit_successes(store, learner, dataset, steps, suite["dev"], seed_start=suite["train"],
-                                             backend=backend, randomize_scene=True)
+                                             backend=backend, randomize_scene=randomize_scene, tasks=tasks,
+                                             dev_episodes=dev_episodes, max_steps=max_steps)
                     path = store.run_dir(training) / "checkpoint"
                     meta = json.loads((path / "meta.json").read_text())
                     meta.update(reserved_through=suite["release"] + 10000, scene_suite=suite)
                     write_json(path / "meta.json", meta)
-                    # Compare with the actual initial RSI when no RSI is deployed; model identity stays explicit.
-                    from .deployment import RPCPolicy
-                    if deployed and (json.loads((Path(deployed["checkpoint"]) / "meta.json").read_text()).get("backend") == "compact-numpy") == (backend == "compact"):
+                    # An explicit parent may differ from the deployed model; in
+                    # that case release evidence must still target the deployment.
+                    if deployed and parent and Path(parent).resolve() != Path(deployed["checkpoint"]).resolve():
                         old = load_policy(deployed["checkpoint"])
                         old_name = deployed["checkpoint"]
-                    elif backend == "rsi":
-                        from serve.release import resolve_ckpt
-                        old_name = str(resolve_ckpt(parent or "v1.0-0.8b", revision=revision))
-                        old = RPCPolicy(old_name)
                     else:
-                        old, old_name = CompactPolicy(), "untrained-compact"
+                        old, old_name = parent_policy, parent_path
                     store.event(run, "stage", {"stage": "independent_evaluation", "round": index + 1})
                     try:
-                        evaluation = evaluate(store, learner, path, old, old_name, list(TASKS),
+                        evaluation = evaluate(store, learner, path, old, old_name, list(tasks),
                                               range(suite["release"], suite["release"] + episodes),
-                                              dataset=dataset, randomize_scene=True)
+                                              dataset=dataset, randomize_scene=randomize_scene, max_steps=max_steps)
                     finally:
                         if hasattr(old, "close"):
                             old.close()

@@ -39,7 +39,7 @@ def test_thresholds_wait_for_new_successes_and_do_not_spawn_duplicate_jobs(tmp_p
     assert observed(10, 3)["status"] == "training"
     request = jobs.requests[0]
     assert request.replay_only and request.backend == "rsi" and request.action == "self-improve"
-    assert request.episodes == 30 and request.steps == 100
+    assert request.episodes == 90 and request.steps == 100 and request.tasks == ["transfer"]
     assert observed(30, 8)["status"] == "training" and len(jobs.requests) == 1
     jobs.running = False
     assert observed(20, 5)["status"] == "collecting"  # Old successes cannot retrigger training.
