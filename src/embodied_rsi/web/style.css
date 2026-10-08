@@ -23,3 +23,5 @@ main{padding:24px;max-width:1900px}header{margin-bottom:18px}.panel{padding:16px
 .stats{grid-template-columns:repeat(4,minmax(0,1fr))}.stats article{min-width:0}.report-history>summary{justify-content:flex-start}.report-history>summary .pill{margin-left:auto}.training-report #data-samples,.training-report #trajectory-samples{max-height:210px}@media(max-width:720px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 .sim-controls .facts{display:block}.sim-controls .facts>div{min-width:0}.sim-controls .facts b{min-width:0}.control-grid label{min-width:0}input,select{min-width:0}
+
+.pipeline-stage.blocked{background:#322a23;border-color:#564936;color:#d5b994}
