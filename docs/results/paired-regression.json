@@ -1,0 +1,64 @@
+{
+  "pairs": 90,
+  "success_rate": 0.0,
+  "champion_success_rate": 1.0,
+  "paired_gain": -1.0,
+  "gain_ci95": [
+    -1.0,
+    -1.0
+  ],
+  "by_task": {
+    "barrier": {
+      "pairs": 30,
+      "candidate_success_rate": 0.0,
+      "champion_success_rate": 1.0,
+      "delta": -1.0
+    },
+    "stack": {
+      "pairs": 30,
+      "candidate_success_rate": 0.0,
+      "champion_success_rate": 1.0,
+      "delta": -1.0
+    },
+    "transfer": {
+      "pairs": 30,
+      "candidate_success_rate": 0.0,
+      "champion_success_rate": 1.0,
+      "delta": -1.0
+    }
+  },
+  "risks": {
+    "collisions": {
+      "candidate": 0,
+      "champion": 0
+    },
+    "drops": {
+      "candidate": 0,
+      "champion": 0
+    },
+    "rejections": {
+      "candidate": 0,
+      "champion": 0
+    }
+  },
+  "mean_steps": 8.6,
+  "p95_latency_ms": 0.1766518792010174,
+  "gate": {
+    "passed": false,
+    "checks": {
+      "enough_pairs": true,
+      "task_coverage": true,
+      "success_gain": false,
+      "confidence_interval": false,
+      "no_task_regression": false,
+      "no_risk_increase": true
+    },
+    "thresholds": {
+      "min_pairs": 90,
+      "gain": 0.05,
+      "regression": 0.02
+    }
+  },
+  "scope": "privileged-state / code-generated skills / partial simulator collision checks",
+  "candidate_sha256": "0457f703bd28aec90b9f2e16457aee0cd5ff0e439873b74f0e83da33a8860c89"
+}
