@@ -1,0 +1,15 @@
+{
+  "python": "3.12.3",
+  "platform": "Linux aarch64",
+  "packages": {
+    "embodied-jev": "0.1.0",
+    "numpy": "2.5.3",
+    "mujoco": "3.13.0",
+    "fastapi": "0.142.4",
+    "uvicorn": "0.54.0",
+    "httpx": "0.28.1",
+    "psutil": "7.2.2",
+    "pytest": "8.4.2",
+    "ruff": "0.16.10"
+  }
+}

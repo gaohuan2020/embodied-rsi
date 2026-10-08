@@ -1,0 +1,14 @@
+{
+  "python": "3.12.3",
+  "platform": "Linux aarch64 / NVIDIA GB10",
+  "packages": {
+    "torch": "2.14.1",
+    "transformers": "5.17.0",
+    "tokenizers": "0.23.2",
+    "safetensors": "0.8.0",
+    "huggingface-hub": "1.33.0",
+    "rsi-jev": "3.0.0",
+    "triton": "3.8.0"
+  },
+  "kernel": "torch-reference"
+}
