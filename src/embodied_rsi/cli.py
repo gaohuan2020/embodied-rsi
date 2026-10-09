@@ -50,6 +50,7 @@ def parser():
     e.add_argument("--max-steps", type=int, default=20)
     e.add_argument("--dataset", required=True, help="Enables train/dev scene leakage checks")
     e.add_argument("--intervention", action="store_true")
+    e.add_argument("--randomize-scene", action="store_true")
     r = sub.add_parser("promote")
     r.add_argument("--report", required=True)
     s = sub.add_parser("dashboard")
@@ -103,6 +104,19 @@ def parser():
     study.add_argument("--audit-episodes", type=int, default=90)
     study.add_argument("--steps", type=int, default=100)
     study.add_argument("--max-steps", type=int, default=20)
+    grasp = sub.add_parser("grasp-study", help="Strict grasp transfer with fixed/self/corrective feedback controls")
+    grasp.add_argument("--rounds", type=int, default=3)
+    grasp.add_argument("--explore-episodes", type=int, default=300)
+    grasp.add_argument("--steps", type=int, default=300)
+    grasp.add_argument("--warmup-steps", type=int, default=500)
+    grasp.add_argument("--demos", type=int, default=100)
+    grasp.add_argument("--dev-episodes", type=int, default=100)
+    grasp.add_argument("--test-episodes", type=int, default=500)
+    grasp.add_argument("--training-seeds", type=int, nargs="+", default=[17, 29, 43])
+    grasp.add_argument("--checkpoint", default="v1.0-0.8b")
+    grasp.add_argument("--max-steps", type=int, default=20)
+    grasp.add_argument("--pilot-episodes", type=int, default=50)
+    grasp.add_argument("--eval-every", type=int, default=50)
     sub.add_parser("status")
     return p
 
@@ -126,7 +140,7 @@ def main(argv=None):
     if getattr(a, "lr", None) is not None and (not math.isfinite(a.lr) or a.lr <= 0):
         raise SystemExit("--lr must be positive")
     store = Store(a.artifacts)
-    if a.command in {"cycle", "task-train", "self-improve", "initialize-rsi", "train", "transfer-study"}:
+    if a.command in {"cycle", "task-train", "self-improve", "initialize-rsi", "train", "transfer-study", "grasp-study"}:
         with (store.root / "training.lock").open("a+") as guard:
             try:
                 fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -137,7 +151,14 @@ def main(argv=None):
 
 
 def _run(a, store):
-    if a.command == "collect":
+    if a.command == "grasp-study":
+        from .grasp_study import run_study
+        result = run_study(store, rounds=a.rounds, explore_episodes=a.explore_episodes,
+            steps=a.steps, warmup_steps=a.warmup_steps, demos=a.demos, dev_episodes=a.dev_episodes,
+            test_episodes=a.test_episodes, training_seeds=tuple(a.training_seeds),
+            checkpoint=a.checkpoint, max_steps=a.max_steps, pilot_episodes=a.pilot_episodes,
+            eval_every=a.eval_every)
+    elif a.command == "collect":
         from .workflow import collect
         policy = None
         if a.backend == "http":
@@ -170,7 +191,7 @@ def _run(a, store):
         result = evaluate(store, policy_for(a.backend, a.checkpoint), a.checkpoint,
                           policy_for(a.backend, a.champion) if a.champion else None,
                           a.champion or "teacher", a.tasks, range(a.seed_start, a.seed_start + a.episodes),
-                          a.max_steps, a.dataset, a.intervention)
+                          a.max_steps, a.dataset, a.intervention, a.randomize_scene)
     elif a.command == "promote":
         from .evaluation import promote
         result = promote(store, a.report)
@@ -188,10 +209,13 @@ def _run(a, store):
                               a.backend, a.revision, a.seed_start, a.explore_episodes, a.replay_only,
                               a.tasks, a.randomize_scene, a.max_steps, a.dev_episodes)
     elif a.command == "initialize-rsi":
+        from .dataset import validate_dataset
         from .self_improvement import fit_successes
         from .task_rsi import RSILearner
+        tasks = sorted({group.split(":")[0] for group in validate_dataset(a.dataset)["groups"]})
         result = fit_successes(store, RSILearner(a.checkpoint, a.lr, a.revision), a.dataset,
-                              steps=a.steps, dev_episodes=1, seed_start=0, initialization=True)
+                              steps=a.steps, dev_episodes=10, seed_start=0, initialization=True,
+                              tasks=tasks, randomize_scene=os.environ.get("EMBODIED_RSI_STRICT_GRASP") == "1")
     elif a.command == "transfer-study":
         from .transfer_study import transfer_study
         result = transfer_study(store, a.rounds, a.explore_episodes, a.steps, a.episodes,

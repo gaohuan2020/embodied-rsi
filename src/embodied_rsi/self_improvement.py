@@ -12,6 +12,7 @@ import numpy as np
 from .deployment import current, deploy, load_policy
 from .monitor import Monitor
 from .sim import INSTRUCTIONS, episode
+from .stage_prompts import instructions_for
 from .storage import dumps, write_json
 from .task_training import TASKS, CompactLearner, task_score
 from .workflow import evaluate, reserve_suite
@@ -62,7 +63,8 @@ def success_dataset(files, output, tasks=None):
                     keys = list(row["criteria"])
                     cases.append({"case_id": f"{ep['episode_id']}:{row['step']}",
                         "source": "successful_model_episode", "state": dumps(row["state"]),
-                        "questions": [{"key": "action", "mode": "choice", "instructions": INSTRUCTIONS,
+                        "questions": [{"key": "action", "mode": "choice",
+                                       "instructions": instructions_for(row["state"], INSTRUCTIONS),
                                        "options": keys, "criteria": row["criteria"]}],
                         "gold": {"action": [float(k == row["choice"]) for k in keys]},
                         "provenance": {"group": ep["group"], "task": ep["task"], "seed": ep["seed"],
@@ -107,8 +109,12 @@ def fit_successes(store, learner, dataset, steps=100, dev_start=1010000, dev_epi
     run = store.create("initialize" if initialization else "self-train", backend, config)
     directory = store.run_dir(run)
     started = time.perf_counter()
+    parameters = None
     try:
         with Monitor(store, run) as monitor:
+            if backend == "rsi":
+                from .parameter_history import ParameterRecorder
+                parameters = ParameterRecorder(learner.model, directory)
             def validate(step):
                 rows = [episode(task, seed, learner, max_steps=max_steps, label_mode="none", randomize_scene=randomize_scene) for task in tasks
                         for seed in range(dev_start, dev_start + dev_episodes)]
@@ -129,10 +135,11 @@ def fit_successes(store, learner, dataset, steps=100, dev_start=1010000, dev_epi
             for step in range(1, steps + 1):
                 batch = [encoded[i] for i in rng.integers(len(encoded), size=batch_size)]
                 metrics = learner.imitate(batch)
-                if step % 5 == 0 or step == 1 or step == steps:
-                    monitor.metric(step, **metrics, training_samples=len(cases),
-                                   successful_episodes=manifest.get("successful_episodes", 0),
-                                   steps_per_second=step / (time.perf_counter() - started))
+                if parameters:
+                    parameters.capture(step)
+                monitor.metric(step, **metrics, training_samples=len(cases),
+                               successful_episodes=manifest.get("successful_episodes", 0),
+                               steps_per_second=step / (time.perf_counter() - started))
                 if step % 25 == 0 or step == steps:
                     score = validate(step)
                     if score > best_score:
@@ -140,6 +147,8 @@ def fit_successes(store, learner, dataset, steps=100, dev_start=1010000, dev_epi
                     elif score[0] < best_score[0] - .05:
                         monitor.alert("task_completion_regression", "任务完成率下降，保留之前的模型")
             learner.restore(best)
+            if parameters:
+                parameters.capture(best_step, "selected_checkpoint")
             if hashlib.sha256((dataset / "train.jsonl").read_bytes()).hexdigest() != manifest["sha256"]["train"]:
                 raise ValueError("Successful trajectory data changed during training")
             summary = {"objective": objective, "initial_success_rate": initial[0],
@@ -228,6 +237,7 @@ def self_improve(store, rounds=2, episodes=90, steps=100, checkpoint=None, backe
                     for task in (() if replay_only else tasks):
                         for seed in range(suite["train"], suite["train"] + explore_episodes):
                             result = episode(task, seed, exploratory, label_mode="none", rng=rng,
+                                             replay_directory=store.run_dir(collection) / "replays",
                                              randomize_scene=randomize_scene, max_steps=max_steps)
                             result.update(source_policy=backend, checkpoint=str(parent or "v1.0-0.8b"))
                             result["exploration_update"] = memory.observe(result)

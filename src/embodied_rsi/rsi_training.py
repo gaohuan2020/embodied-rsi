@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 from .evaluation import fingerprint
+from .stage_prompts import decision_input
 from .storage import write_json
 
 
@@ -49,7 +50,12 @@ def fit_rsi(dataset, checkpoint, output, monitor, *, steps, seed, lr, batch_size
     train_enc = dataclasses.replace(enc, option_order="shuffled")
 
     def forward(chunk, encoder):
-        examples = [encode_question(tok, c.state, c.questions[0], encoder, rng=rng) for c in chunk]
+        examples = []
+        for c in chunk:
+            q = c.questions[0]
+            prompt, instructions, criteria = decision_input(c.state, q.criteria, q.instructions)
+            q = dataclasses.replace(q, instructions=instructions, criteria=criteria)
+            examples.append(encode_question(tok, prompt, q, encoder, rng=rng))
         batch = collate(tok, examples, max_options=max_options, device=device)
         logits = unpermute_logits(model(**batch).float(), batch["option_perm"], batch["option_mask"])
         gold = gold_tensor(chunk, ["action"] * len(chunk), max_options, device)

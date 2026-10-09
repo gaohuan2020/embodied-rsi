@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 
 import numpy as np
+
+from .stage_prompts import instructions_for
 
 PHASES = ("approach", "descend", "grasp", "lift", "carry", "lower", "release", "withdraw", "recover")
 INSTRUCTIONS = "Choose the next robot skill to complete the goal. Use measured state and recent outcomes."
@@ -16,13 +19,14 @@ def state_for(world, history):
     o = world.observe()
     keep = ("task", "units", "tcp", "object", "destination", "gripper", "held",
             "finger_contacts", "grasp_secured", "support_contact")
-    return {"observation": {k: o[k] for k in keep}, "recent_outcomes": history[-3:]}
+    return {"task_id": world.task, "observation": {k: o[k] for k in keep},
+            "recent_outcomes": history[-3:]}
 
 
-def menu_for(world):
+def menu_for(world, phases=PHASES):
     from embodied_jev.planning import candidates
     options = {}
-    for phase in PHASES:
+    for phase in phases:
         c = candidates(world, phase, preview=False)[0]
         if c.target is None or np.any(np.asarray(c.target) < [.20, -.32, .02]) or np.any(
                 np.asarray(c.target) > [.65, .34, .42]):
@@ -52,7 +56,8 @@ def execute(world, candidate, on_frame=None):
     except (ValueError, RuntimeError) as exc:
         return False, f"unreachable: {exc}"
     unsafe = world.unsafe_contacts
-    for _ in world.motion(candidate.target, candidate.gripper, candidate.seconds, emit=bool(on_frame)):
+    for _ in world.motion(candidate.target, candidate.gripper, candidate.seconds,
+                          emit=bool(on_frame) and not getattr(on_frame, "capture_only", False)):
         if on_frame:
             on_frame(world)
         if world.unsafe_contacts > unsafe:
@@ -88,11 +93,29 @@ def rollout_labels(world, options, horizon=4):
 
 
 def episode(task, seed, policy=None, max_steps=20, label_mode="teacher", intervention=False,
-            rng=None, on_frame=None, on_step=None, randomize_scene=False):
+            rng=None, on_frame=None, on_step=None, randomize_scene=False,
+            world_factory=None, on_decision=None, state_transform=None, replay_directory=None, on_action=None):
     from embodied_jev.physics import RobotWorld
 
     from .scenes import DISTRIBUTION, scene_config
-    world = RobotWorld(task, seed, scene_config(task, seed) if randomize_scene else None)
+    if world_factory is None and os.environ.get("EMBODIED_RSI_STRICT_GRASP") == "1":
+        from .grasp import GraspWorld, grasp_state
+        world_factory, state_transform = GraspWorld, grasp_state
+    world = (world_factory or RobotWorld)(task, seed, scene_config(task, seed) if randomize_scene else None)
+    poses = None
+    if replay_directory is not None:
+        from .trajectory_replay import PoseRecorder
+        poses, render_frame = PoseRecorder(), on_frame
+        def capture_frame(current):
+            poses.capture(current)
+            if render_frame:
+                render_frame(current)
+        capture_frame.capture_only = render_frame is None
+        on_frame = capture_frame
+    controller = None
+    if os.environ.get("EMBODIED_RSI_STAGED_PROMPTS") == "1" and task == "transfer":
+        from .stage_prompts import STAGES, PickPlaceStages
+        controller = PickPlaceStages()
     history, records, latencies = [], [], []
     started = time.perf_counter()
     failure = None
@@ -100,11 +123,18 @@ def episode(task, seed, policy=None, max_steps=20, label_mode="teacher", interve
     if on_frame:
         on_frame(world)
     for step in range(max_steps):
+        if poses:
+            poses.step = step
         if world.success():
             break
         if intervention and step == 1:
             world.perturb("object_shift", [.015, -.01])
         state, options = state_for(world, history), menu_for(world)
+        if state_transform:
+            state = state_transform(world, state)
+        if controller:
+            state["control"] = controller.update(world.observe())
+            options = menu_for(world, STAGES[controller.stage][1])
         gold_key = teacher(world)
         if not options or (policy is None and gold_key not in options):
             failure = "no_valid_action"
@@ -114,6 +144,8 @@ def episode(task, seed, policy=None, max_steps=20, label_mode="teacher", interve
         keys = list(criteria)
         np.random.default_rng(seed * 101 + step).shuffle(keys)
         criteria = {k: criteria[k] for k in keys}
+        if on_decision:
+            on_decision(world, state, criteria, step)
         before = world.observe()
         t = time.perf_counter()
         probabilities = policy.predict(state, criteria) if policy else None
@@ -138,11 +170,16 @@ def episode(task, seed, policy=None, max_steps=20, label_mode="teacher", interve
         else:
             branch_scores = None
             gold = [float(k == gold_key) for k in keys]
+        if on_action:
+            on_action({"step": step, "choice": chosen, "criteria": criteria,
+                       "probabilities": probabilities.tolist() if probabilities is not None else None,
+                       "latency_ms": latency})
         executed, rejection = execute(world, options[chosen], on_frame)
         after = world.observe()
         lost = before["held"] and not after["held"] and chosen not in {"release", "withdraw"}
         drops += int(lost)
         record = {"step": step, "state": state, "criteria": criteria, "choice": chosen,
+                  "instructions": instructions_for(state, INSTRUCTIONS),
                   "probabilities": probabilities.tolist() if probabilities is not None else None,
                   "gold": gold, "label_source": label_mode, "branch_scores": branch_scores,
                   "action": options[chosen].serialise(), "before": before, "after": after,
@@ -167,7 +204,7 @@ def episode(task, seed, policy=None, max_steps=20, label_mode="teacher", interve
             break
     success = world.success()
     group = f"{task}:{seed}:{int(intervention)}"
-    return {"schema_version": 1, "task": task, "seed": seed, "group": group,
+    result = {"schema_version": 1, "task": task, "seed": seed, "group": group,
             "scene_distribution": DISTRIBUTION if randomize_scene else "upstream-default",
             "scene_config": world.scene_config, "scene_hash": world.scene_hash,
             "episode_id": hashlib.sha256(f"{group}:{started}".encode()).hexdigest()[:20],
@@ -178,3 +215,13 @@ def episode(task, seed, policy=None, max_steps=20, label_mode="teacher", interve
             "wall_seconds": time.perf_counter() - started,
             "latency_p95_ms": float(np.percentile(latencies, 95)) if latencies else 0,
             "records": records}
+    if hasattr(world, "diagnostics"):
+        result.update(stages=world.diagnostics(), success_definition="strict_grasp_v1",
+                      input_contract="grasp-observation-v1")
+    if controller:
+        result["control_protocol"] = state["control"]["protocol"]
+        result["stage_transitions"] = controller.transitions
+    if poses:
+        from pathlib import Path
+        result["replay"] = poses.save(Path(replay_directory), result)
+    return result

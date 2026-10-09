@@ -10,7 +10,12 @@ def context(state):
     o = state["observation"]
     delta = np.asarray(o["object"]) - o["tcp"]
     bins = np.clip(np.rint(delta / .035), -12, 12).astype(int).tolist()
-    return json.dumps([bins, bool(o["held"]), o["gripper"], bool(o["support_contact"])])
+    bucket = [bins, bool(o["held"]), o["gripper"], bool(o["support_contact"])]
+    if state.get("control"):
+        destination = np.asarray(o["destination"]) - o["object"]
+        bucket.extend([state["control"]["protocol"], state["control"]["stage"],
+                       np.clip(np.rint(destination / .05), -12, 12).astype(int).tolist()])
+    return json.dumps(bucket)
 
 
 class ExplorationMemory:
@@ -33,7 +38,8 @@ class ExplorationMemory:
                             self.observe(json.loads(line))
 
     def stats(self, state, keys):
-        task, bucket = state["observation"].get("task", "transfer"), context(state)
+        task = state.get("task_id", state["observation"].get("task", "transfer"))
+        bucket = context(state)
         with self.store.connect() as db:
             rows = db.execute("SELECT action,trials,successes,failures FROM exploration_actions "
                               "WHERE backend=? AND task=? AND context=?", (self.backend, task, bucket)).fetchall()
@@ -51,7 +57,10 @@ class ExplorationMemory:
             for index, row in enumerate(rows):
                 before, after = row["before"], row["after"]
                 bad_grasp = row["choice"] == "grasp" and not after["held"]
-                drop = before["held"] and not after["held"] and row["choice"] not in {"release", "withdraw"}
+                safe_placement = (np.linalg.norm(np.asarray(before["object"])[:2]
+                                  - np.asarray(before["destination"])[:2]) < .025
+                                  and abs(before["object"][2] - before["destination"][2]) < .012)
+                drop = before["held"] and not after["held"] and not safe_placement
                 no_change = (np.linalg.norm(np.asarray(after["tcp"]) - before["tcp"]) < .001 and
                              np.linalg.norm(np.asarray(after["object"]) - before["object"]) < .001 and
                              before["gripper"] == after["gripper"])

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import json
-
 import httpx
 import numpy as np
 
 from .sim import INSTRUCTIONS
+from .stage_prompts import decision_input
 
 
 class HTTPPolicy:
@@ -17,8 +16,9 @@ class HTTPPolicy:
         self.client.close()
 
     def predict(self, state, criteria):
-        response = self.client.post(self.url, json={"model": self.model, "state": state,
-            "questions": {"action": {"type": "choice", "instructions": INSTRUCTIONS, "criteria": criteria}}})
+        prompt, instructions, descriptions = decision_input(state, criteria, INSTRUCTIONS)
+        response = self.client.post(self.url, json={"model": self.model, "state": prompt,
+            "questions": {"action": {"type": "choice", "instructions": instructions, "criteria": descriptions}}})
         response.raise_for_status()
         answer = response.json()["answers"]["action"]
         probabilities = answer["probabilities"]
@@ -40,6 +40,7 @@ class InProcessRSI:
         self.decider = Decider(checkpoint, device=device, dtype="fp32", revision=revision)
 
     def predict(self, state, criteria):
-        answers = self.decider.decide(json.dumps(state, ensure_ascii=False), {
-            "action": {"type": "choice", "instructions": INSTRUCTIONS, "criteria": criteria}})
+        prompt, instructions, descriptions = decision_input(state, criteria, INSTRUCTIONS)
+        answers = self.decider.decide(prompt, {
+            "action": {"type": "choice", "instructions": instructions, "criteria": descriptions}})
         return np.asarray([answers["action"]["probabilities"][k] for k in criteria])

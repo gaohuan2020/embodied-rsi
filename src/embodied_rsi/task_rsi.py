@@ -8,6 +8,7 @@ from collections import OrderedDict
 from pathlib import Path
 
 from .sim import INSTRUCTIONS
+from .stage_prompts import decision_input
 from .storage import dumps, write_json
 
 
@@ -38,8 +39,9 @@ class RSILearner:
         from rsijev.contract import Question
         from rsijev.encode import collate, encode_question, unpermute_logits
 
-        q = Question("action", "choice", INSTRUCTIONS, tuple(criteria), criteria)
-        example = encode_question(self.tok, dumps(state), q, self.enc, rng=random.Random(0))
+        prompt, instructions, descriptions = decision_input(state, criteria, INSTRUCTIONS)
+        q = Question("action", "choice", instructions, tuple(criteria), descriptions)
+        example = encode_question(self.tok, prompt, q, self.enc, rng=random.Random(0))
         batch = collate(self.tok, [example], max_options=len(criteria), device=self.device)
         frozen = {}
         def remember(_module, _args, kwargs):

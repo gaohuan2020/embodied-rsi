@@ -14,7 +14,8 @@ import numpy as np
 os.environ.setdefault("MUJOCO_GL", "egl")
 
 from .exploration import ExplorationMemory, ExploringPolicy
-from .sim import episode
+from .sim import INSTRUCTIONS, episode
+from .stage_prompts import decision_input
 from .storage import dumps, write_json
 
 
@@ -89,7 +90,7 @@ class Simulation:
                 self.step_once = action == "step"
                 self.state["status"] = "starting"
                 self.collection = {"episodes": 0, "successful_episodes": 0, "failed_episodes": 0, "success_rate": 0.}
-                self.state.update(records=[], result=None, version=None)
+                self.state.update(records=[], decision=None, result=None, version=None)
                 self.frames = []
                 config = {"task": task, "seed": seed, "policy": policy, "explore": explore,
                           "continuous": continuous, "max_steps": max_steps, "checkpoint": checkpoint,
@@ -122,8 +123,6 @@ class Simulation:
             world.model.vis.headlight.ambient[:] = [.22, .24, .27]
             world.model.vis.headlight.diffuse[:] = [.65, .65, .62]
             world.model.vis.headlight.specular[:] = [.32, .32, .32]
-            table = world.model.geom("table").id
-            world.model.geom_rgba[table] = [.27, .32, .37, 1.]
             self.renderer = mujoco.Renderer(world.model, height=640, width=1024)
             self.world_model = world.model
         with self.lock:
@@ -136,9 +135,12 @@ class Simulation:
         self.renderer.update_scene(world.data, camera=camera)
         # Display-only ground: improves spatial reading without adding physics contacts.
         scene = self.renderer.scene
+        from .visuals import decorate
+        decorate(scene, world, [f["observation"]["tcp"] for f in self.frames[-120::4]]
+                 if controls["view"] == "external" else ())
         if scene.ngeom < scene.maxgeom:
             mujoco.mjv_initGeom(scene.geoms[scene.ngeom], mujoco.mjtGeom.mjGEOM_PLANE,
-                               np.array([3., 3., .1]), np.array([0., 0., -.085]),
+                               np.array([3., 3., .1]), np.array([0., 0., -.46]),
                                np.eye(3).ravel(), np.array([.07, .09, .115, 1.]))
             scene.ngeom += 1
         buffer = io.BytesIO()
@@ -186,7 +188,8 @@ class Simulation:
                     config = {**config, "_base_task": config.get("_base_task", config["task"]),
                               "task": task_for(config["seed"])}
                 with self.lock:
-                    self.state.update(config, records=[], result=None, error=None, version=None)
+                    self.state.update(config, records=[], decision=None, result=None, error=None, version=None,
+                                      control=None, prompt=None)
                     self.frames = []
                 if action == "reset":
                     world = RobotWorld(self.state["task"], self.state["seed"])
@@ -259,6 +262,7 @@ class Simulation:
                     def on_step(row, run=run, records=records):
                         records.append(row)
                         with self.lock:
+                            self.state["decision"] = None
                             self.state["records"].append({k: row[k] for k in
                                 ("step", "choice", "probabilities", "criteria", "executed", "rejection", "latency_ms")})
                             if self.step_once:
@@ -267,8 +271,21 @@ class Simulation:
                                 self.state["status"] = "paused"
                         self.store.event(run, "action", {"step": row["step"], "choice": row["choice"], "executed": row["executed"]})
 
+                    def on_decision(_world, state, criteria, step):
+                        text, instructions, descriptions = decision_input(state, criteria, INSTRUCTIONS)
+                        with self.lock:
+                            self.state.update(control=state.get("control"), prompt={"state": text,
+                                "instructions": instructions, "criteria": descriptions})
+                            self.state["decision"] = {"step": step, "phase": "inference", "criteria": criteria}
+
+                    def on_action(row):
+                        with self.lock:
+                            self.state["decision"] = {**row, "phase": "executing"}
+
                     result = episode(config["task"], config["seed"], policy, max_steps=config.get("max_steps", 20),
-                        label_mode="none", on_frame=on_frame, on_step=on_step,
+                        label_mode="teacher" if policy is None else "none", on_frame=on_frame, on_step=on_step,
+                        on_decision=on_decision, on_action=on_action,
+                        replay_directory=self.store.run_dir(run) / "replays",
                         rng=np.random.default_rng(config["seed"]) if config.get("explore") else None,
                         randomize_scene=config.get("randomize_scene", True))
                     result.update(model_version=version, source_policy=backend)
@@ -306,7 +323,7 @@ class Simulation:
                         else:
                             self._finish_collection("cancelled" if self.closed.is_set() else "completed")
                     with self.lock:
-                        self.state["status"] = "cancelled"
+                        self.state.update(status="cancelled", decision=None)
                 except Exception as exc:  # noqa: BLE001 -- worker failures must reach the UI
                     if run:
                         if run == self.session_run:
@@ -314,7 +331,7 @@ class Simulation:
                         else:
                             self.store.finish(run, "failed", {"error": str(exc)[:1000]})
                     with self.lock:
-                        self.state.update(status="failed", error=str(exc)[:1000])
+                        self.state.update(status="failed", decision=None, error=str(exc)[:1000])
                 finally:
                     if pinned:
                         self.runtime.release(pinned)

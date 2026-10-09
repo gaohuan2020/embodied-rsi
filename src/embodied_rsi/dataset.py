@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 
 from .sim import INSTRUCTIONS
+from .stage_prompts import instructions_for
 from .storage import dumps, write_json
 
 
@@ -50,7 +51,8 @@ def build_dataset(episode_files, output):
                     raise ValueError("Invalid training target distribution")
                 splits[split].append({"case_id": fingerprint, "source": f"robot_{ep['task']}",
                     "state": state, "questions": [{"key": "action", "mode": "choice",
-                    "instructions": INSTRUCTIONS, "options": list(criteria), "criteria": criteria}],
+                    "instructions": instructions_for(record["state"], INSTRUCTIONS),
+                    "options": list(criteria), "criteria": criteria}],
                     "gold": {"action": gold}, "provenance": {"group": ep["group"],
                     "episode_id": ep["episode_id"], "step": record["step"], "label_source": record["label_source"]}})
     if any(not cases for cases in splits.values()):

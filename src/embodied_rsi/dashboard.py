@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import logging
 import os
 import signal
 import subprocess
@@ -13,19 +14,21 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
+import psutil
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .deployment import Runtime, current
 from .monitor import resources
+from .round_metrics import RoundRecorder
 from .simulation import Simulation
 from .storage import RUN_ID, write_json
 
 
 class JobRequest(BaseModel):
-    action: Literal["cycle", "collect", "train", "evaluate", "task-train", "self-improve", "initialize-rsi", "transfer-study"]
+    action: Literal["cycle", "collect", "train", "evaluate", "task-train", "self-improve", "initialize-rsi", "transfer-study", "grasp-study"]
     backend: Literal["compact", "rsi"] = "compact"
     dataset: str | None = None
     checkpoint: str | None = None
@@ -39,6 +42,11 @@ class JobRequest(BaseModel):
     randomize_scene: bool = False
     max_steps: int = Field(default=20, ge=1, le=100)
     audit_episodes: int = Field(default=90, ge=30, le=300)
+    demos: int = Field(default=100, ge=1, le=1000)
+    warmup_steps: int = Field(default=500, ge=1, le=10000)
+    dev_episodes: int = Field(default=100, ge=1, le=1000)
+    test_episodes: int = Field(default=500, ge=1, le=2000)
+    training_seeds: list[int] = Field(default_factory=lambda: [17, 29, 43], min_length=1, max_length=5)
 
 
 class Control(BaseModel):
@@ -68,11 +76,48 @@ class Decision(BaseModel):
     model: str = "deployed"
 
 
+class RestoredJobProcess:
+    """Observe a surviving background job after the dashboard restarts."""
+    def __init__(self, process, store, metadata):
+        self.process, self.store, self.metadata = process, store, metadata
+        self.pid = process.pid
+
+    def poll(self):
+        try:
+            if self.process.is_running() and self.process.status() != psutil.STATUS_ZOMBIE:
+                return None
+        except psutil.NoSuchProcess:
+            pass
+        kind = {"initialize-rsi": "initialize"}.get(self.metadata["action"], self.metadata["action"])
+        with self.store.connect() as db:
+            row = db.execute("SELECT status FROM runs WHERE kind=? AND backend=? AND created>=? ORDER BY created LIMIT 1",
+                             (kind, self.metadata["backend"], self.metadata["created"] - 1)).fetchone()
+        return 0 if row and row["status"] == "completed" else -2 if row and row["status"] == "cancelled" else 1
+
+
 class Jobs:
     def __init__(self, store, rsi_python=None):
         self.store, self.rsi_python = store, rsi_python
         self.jobs = {}
         self.lock = threading.Lock()
+        for path in (store.root / "jobs").glob("*/job.json"):
+            try:
+                metadata = json.loads(path.read_text())
+                if metadata.get("status") != "running":
+                    continue
+                process = psutil.Process(metadata["pid"])
+                args = process.cmdline()
+                index = args.index("--artifacts")
+                if ("embodied_rsi.cli" not in args or args[index + 1] != str(store.root)
+                        or args[index + 2] != metadata["action"]
+                        or abs(process.create_time() - metadata["created"]) > 5):
+                    continue
+                self.jobs[metadata["id"]] = {
+                    "process": RestoredJobProcess(process, store, metadata),
+                    "metadata": metadata, "directory": path.parent,
+                }
+            except (OSError, ValueError, KeyError, IndexError, psutil.Error):
+                continue
 
     def start(self, request):
         with (self.store.root / "training.lock").open("a+") as guard:
@@ -84,7 +129,17 @@ class Jobs:
         if not interpreter or not Path(interpreter).is_file():
             raise ValueError("Configure --rsi-python before launching RSI jobs")
         args = [interpreter, "-m", "embodied_rsi.cli", "--artifacts", str(self.store.root), request.action]
-        if request.action == "transfer-study":
+        if request.action == "grasp-study":
+            if (self.store.root / "grasp-study-latest.json").exists():
+                raise ValueError("此目录已有抓取实验，请使用新的实验目录")
+            if request.backend != "rsi" or request.tasks != ["transfer"] or request.checkpoint:
+                raise ValueError("抓取对照实验使用原始 RSI 和 transfer 任务")
+            args += ["--rounds", str(request.rounds), "--steps", str(request.steps),
+                     "--explore-episodes", str(request.explore_episodes), "--demos", str(request.demos),
+                     "--warmup-steps", str(request.warmup_steps), "--dev-episodes", str(request.dev_episodes),
+                     "--test-episodes", str(request.test_episodes), "--max-steps", str(request.max_steps),
+                     "--training-seeds", *map(str, request.training_seeds)]
+        elif request.action == "transfer-study":
             if request.tasks != ["transfer"] or request.episodes < 90 or request.rounds < 2:
                 raise ValueError("搬运测试只接受 transfer、至少 2 轮和 90 个发布场景")
             if request.checkpoint:
@@ -105,7 +160,7 @@ class Jobs:
                 if (meta.get("backend") == "compact-numpy") != (request.backend == "compact"):
                     raise ValueError("Checkpoint backend does not match selected backend")
                 args += ["--checkpoint", str(path)]
-        if request.action == "transfer-study":
+        if request.action in {"transfer-study", "grasp-study"}:
             pass
         elif request.action in {"cycle", "self-improve"}:
             if request.episodes < 30:
@@ -195,12 +250,19 @@ def create_app(store, rsi_python=None):
     from .auto_training import AutoTrainer
     automatic = AutoTrainer(store, jobs, JobRequest)
     simulation = Simulation(store, runtime, automatic.observe)
+    from .trajectory_replay import TrajectoryReplay
+    replay_archive = TrajectoryReplay(store)
     sample = {"ts": None, "data": {}}
+    recorder = RoundRecorder(store)
     stop = threading.Event()
 
     def sampling():
         while not stop.is_set():
             sample.update(ts=time.time(), data=resources())
+            try:
+                recorder.refresh()
+            except Exception:  # Retry reporting without stopping collection or resource sampling.
+                logging.getLogger(__name__).exception("Could not refresh round metrics")
             stop.wait(5)
 
     @asynccontextmanager
@@ -212,6 +274,7 @@ def create_app(store, rsi_python=None):
         thread.join(timeout=4)
         simulation.close()
         runtime.close()
+        replay_archive.close()
 
     app = FastAPI(title="Embodied RSI Dashboard", lifespan=lifespan)
     web = Path(__file__).parent / "web"
@@ -239,9 +302,45 @@ def create_app(store, rsi_python=None):
     def simulation_page():
         return FileResponse(web / "simulation.html")
 
+    @app.get("/grasp")
+    def grasp_page():
+        return FileResponse(web / "index.html")
+
+    @app.get("/api/grasp/status")
+    def grasp_status():
+        path = store.root / "grasp-study-latest.json"
+        status = json.loads(path.read_text()) if path.exists() else {"status": "idle"}
+        observation = store.root / "grasp-observation.json"
+        if observation.exists():
+            status["live"] = json.loads(observation.read_text())
+        status["jobs"] = jobs.list()
+        return status
+
+    @app.get("/api/grasp/frame.jpg")
+    def grasp_frame():
+        path = store.root / "grasp-frame.jpg"
+        if not path.exists():
+            raise HTTPException(404, "等待物理仿真画面")
+        return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
     @app.get("/health")
     def health():
         return {"status": "ok", "schema_version": 1}
+
+    @app.get("/api/rounds")
+    def round_records():
+        path = recorder.directory / "rounds.json"
+        if not path.exists():
+            recorder.refresh()
+        return FileResponse(path, media_type="application/json", headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/rounds/export/{name}")
+    def export_round_records(name: Literal["training-rounds", "collection-rounds", "training-loss", "collection-episodes"]):
+        path = recorder.directory / f"{name}.csv"
+        if not path.exists():
+            recorder.refresh()
+        return FileResponse(path, media_type="text/csv", filename=path.name,
+                            headers={"Cache-Control": "no-store"})
 
     @app.get("/api/overview")
     def overview():
@@ -305,6 +404,47 @@ def create_app(store, rsi_python=None):
                     rows.append(row)
                 count += 1
         return {"episodes": rows, "total": count, "offset": offset}
+
+    @app.get("/api/runs/{run_id}/parameters")
+    def parameters(run_id: str, after: int = -1):
+        if not RUN_ID.fullmatch(run_id) or after < -1:
+            raise HTTPException(400, "Invalid parameter cursor")
+        from .parameter_history import parameter_history
+        try:
+            return parameter_history(store, run_id, after)
+        except (OSError, ValueError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get("/api/runs/{run_id}/replays")
+    def replays(run_id: str, outcome: Literal["all", "success", "failure"] = "all", offset: int = 0, limit: int = 5):
+        if not RUN_ID.fullmatch(run_id) or offset < 0 or not 1 <= limit <= 50:
+            raise HTTPException(400, "Invalid replay page")
+        try:
+            return replay_archive.catalogue(run_id, outcome, offset, limit)
+        except FileNotFoundError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @app.get("/api/runs/{run_id}/replay/{episode_id}")
+    def replay_metadata(run_id: str, episode_id: str):
+        if not RUN_ID.fullmatch(run_id) or not RUN_ID.fullmatch(episode_id):
+            raise HTTPException(400, "Invalid replay id")
+        try:
+            return replay_archive.metadata(run_id, episode_id)
+        except FileNotFoundError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get("/api/runs/{run_id}/replay/{episode_id}/frames/{frame}.jpg")
+    def archived_frame(run_id: str, episode_id: str, frame: int, view: Literal["external", "wrist"] = "external"):
+        if not RUN_ID.fullmatch(run_id) or not RUN_ID.fullmatch(episode_id) or frame < 0:
+            raise HTTPException(400, "Invalid replay frame")
+        try:
+            return Response(replay_archive.frame(run_id, episode_id, frame, view), media_type="image/jpeg")
+        except FileNotFoundError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     @app.get("/api/simulation")
     def simulation_status():
