@@ -117,6 +117,16 @@ def parser():
     grasp.add_argument("--max-steps", type=int, default=20)
     grasp.add_argument("--pilot-episodes", type=int, default=50)
     grasp.add_argument("--eval-every", type=int, default=50)
+    code = sub.add_parser("code-study", help="Paired stateful code / recovery / RSI / hybrid experiment")
+    code.add_argument("--checkpoint", help="Local RSI-Jev checkpoint; omit for code/recovery ablation only")
+    code.add_argument("--rsi-python", help="Separate interpreter for the RSI worker")
+    code.add_argument("--episodes", type=int, default=90, help="Matched seeds per profile")
+    code.add_argument("--seed-start", type=int, default=20000000)
+    code.add_argument("--max-steps", type=int, default=30)
+    code.add_argument("--max-retries", type=int, default=2)
+    code.add_argument("--profiles", nargs="+", choices=["normal", "missed-grasp"],
+                      default=["normal", "missed-grasp"])
+    code.add_argument("--staged-prompts", action=argparse.BooleanOptionalAction, default=True)
     sub.add_parser("status")
     return p
 
@@ -151,7 +161,11 @@ def main(argv=None):
 
 
 def _run(a, store):
-    if a.command == "grasp-study":
+    if a.command == "code-study":
+        from .code_study import run_code_study
+        result = run_code_study(store, a.checkpoint, a.episodes, a.seed_start, a.max_steps,
+                                a.max_retries, a.profiles, a.staged_prompts, a.rsi_python)
+    elif a.command == "grasp-study":
         from .grasp_study import run_study
         result = run_study(store, rounds=a.rounds, explore_episodes=a.explore_episodes,
             steps=a.steps, warmup_steps=a.warmup_steps, demos=a.demos, dev_episodes=a.dev_episodes,

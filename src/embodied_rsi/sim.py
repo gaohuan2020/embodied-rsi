@@ -94,7 +94,8 @@ def rollout_labels(world, options, horizon=4):
 
 def episode(task, seed, policy=None, max_steps=20, label_mode="teacher", intervention=False,
             rng=None, on_frame=None, on_step=None, randomize_scene=False,
-            world_factory=None, on_decision=None, state_transform=None, replay_directory=None, on_action=None):
+            world_factory=None, on_decision=None, state_transform=None, replay_directory=None, on_action=None,
+            staged_prompts=None):
     from embodied_jev.physics import RobotWorld
 
     from .scenes import DISTRIBUTION, scene_config
@@ -102,6 +103,8 @@ def episode(task, seed, policy=None, max_steps=20, label_mode="teacher", interve
         from .grasp import GraspWorld, grasp_state
         world_factory, state_transform = GraspWorld, grasp_state
     world = (world_factory or RobotWorld)(task, seed, scene_config(task, seed) if randomize_scene else None)
+    if hasattr(policy, "reset"):
+        policy.reset()
     poses = None
     if replay_directory is not None:
         from .trajectory_replay import PoseRecorder
@@ -113,7 +116,9 @@ def episode(task, seed, policy=None, max_steps=20, label_mode="teacher", interve
         capture_frame.capture_only = render_frame is None
         on_frame = capture_frame
     controller = None
-    if os.environ.get("EMBODIED_RSI_STAGED_PROMPTS") == "1" and task == "transfer":
+    staged_prompts = (os.environ.get("EMBODIED_RSI_STAGED_PROMPTS") == "1"
+                      if staged_prompts is None else staged_prompts)
+    if staged_prompts and task == "transfer":
         from .stage_prompts import STAGES, PickPlaceStages
         controller = PickPlaceStages()
     history, records, latencies = [], [], []
@@ -135,7 +140,7 @@ def episode(task, seed, policy=None, max_steps=20, label_mode="teacher", interve
         if controller:
             state["control"] = controller.update(world.observe())
             options = menu_for(world, STAGES[controller.stage][1])
-        gold_key = teacher(world)
+        gold_key = teacher(world) if policy is None or label_mode not in {"none", "rollout"} else None
         if not options or (policy is None and gold_key not in options):
             failure = "no_valid_action"
             break
@@ -184,6 +189,12 @@ def episode(task, seed, policy=None, max_steps=20, label_mode="teacher", interve
                   "gold": gold, "label_source": label_mode, "branch_scores": branch_scores,
                   "action": options[chosen].serialise(), "before": before, "after": after,
                   "executed": executed, "rejection": rejection, "latency_ms": latency}
+        if getattr(policy, "last_decision", None) is not None:
+            record["policy_decision"] = dict(policy.last_decision)
+        if hasattr(policy, "observe_outcome"):
+            record["policy_feedback"] = policy.observe_outcome({
+                "choice": chosen, "executed": executed, "rejection": rejection,
+                "before": state["observation"], "after": state_for(world, [])["observation"]})
         if getattr(policy, "last_model_probabilities", None) is not None:
             record["model_probabilities"] = policy.last_model_probabilities.tolist()
             record["exploration"] = policy.last_details
@@ -196,6 +207,9 @@ def episode(task, seed, policy=None, max_steps=20, label_mode="teacher", interve
                         "held": after["held"]})
         if rejection == "collision":
             failure = "collision"
+            break
+        if getattr(policy, "stop_reason", None):
+            failure = policy.stop_reason
             break
         if len(history) >= 3 and all(h["choice"] == chosen and
                 np.linalg.norm(h["tcp_delta"]) < .001 and np.linalg.norm(h["object_delta"]) < .001
@@ -215,6 +229,10 @@ def episode(task, seed, policy=None, max_steps=20, label_mode="teacher", interve
             "wall_seconds": time.perf_counter() - started,
             "latency_p95_ms": float(np.percentile(latencies, 95)) if latencies else 0,
             "records": records}
+    if getattr(policy, "source_policy", None):
+        result["source_policy"] = policy.source_policy
+    if hasattr(world, "interventions"):
+        result["interventions"] = world.interventions
     if hasattr(world, "diagnostics"):
         result.update(stages=world.diagnostics(), success_definition="strict_grasp_v1",
                       input_contract="grasp-observation-v1")

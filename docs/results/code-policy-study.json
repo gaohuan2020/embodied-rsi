@@ -1,0 +1,612 @@
+{
+  "run": "code-study-20261014-163338-11033c",
+  "protocol": {
+    "schema_version": 1,
+    "code_protocol": "stateful-transfer-v1",
+    "task": "transfer",
+    "profiles": [
+      "normal",
+      "missed-grasp"
+    ],
+    "seeds": [
+      20050000,
+      20050001,
+      20050002,
+      20050003,
+      20050004,
+      20050005,
+      20050006,
+      20050007,
+      20050008,
+      20050009,
+      20050010,
+      20050011,
+      20050012,
+      20050013,
+      20050014,
+      20050015,
+      20050016,
+      20050017,
+      20050018,
+      20050019,
+      20050020,
+      20050021,
+      20050022,
+      20050023,
+      20050024,
+      20050025,
+      20050026,
+      20050027,
+      20050028,
+      20050029,
+      20050030,
+      20050031,
+      20050032,
+      20050033,
+      20050034,
+      20050035,
+      20050036,
+      20050037,
+      20050038,
+      20050039,
+      20050040,
+      20050041,
+      20050042,
+      20050043,
+      20050044,
+      20050045,
+      20050046,
+      20050047,
+      20050048,
+      20050049,
+      20050050,
+      20050051,
+      20050052,
+      20050053,
+      20050054,
+      20050055,
+      20050056,
+      20050057,
+      20050058,
+      20050059,
+      20050060,
+      20050061,
+      20050062,
+      20050063,
+      20050064,
+      20050065,
+      20050066,
+      20050067,
+      20050068,
+      20050069,
+      20050070,
+      20050071,
+      20050072,
+      20050073,
+      20050074,
+      20050075,
+      20050076,
+      20050077,
+      20050078,
+      20050079,
+      20050080,
+      20050081,
+      20050082,
+      20050083,
+      20050084,
+      20050085,
+      20050086,
+      20050087,
+      20050088,
+      20050089
+    ],
+    "scene_distribution": "workspace-random-v1",
+    "success_definition": "strict_grasp_v1",
+    "input_contract": "grasp-observation-v1",
+    "observation_mode": "privileged",
+    "staged_prompts": true,
+    "max_steps": 30,
+    "max_retries": 2,
+    "checkpoint": "/home/huan/repo/embodied-rsi/artifacts/runs/self-train-20261009-164902-ba1977/checkpoint",
+    "checkpoint_sha256": "bac7fe5ac1302a8e7822182c1744773630379875587560c7920f268a7f341f61",
+    "source_sha256": {
+      "embodied_rsi.code_policy": "a222dab615a50f16940ba275084f00108785ce39abf37c65fb623fe84cdc29a1",
+      "embodied_rsi.grasp": "d4b74ff6a180cc95b5bee6c15356bb6576f04c57b10809b90b4b34b96b149947",
+      "embodied_rsi.scenes": "0e101ee07592a2db5fc3c155db639064ad51a19fcc418b05de5f3d54f2b2885c",
+      "embodied_rsi.sim": "9161be25bec47792203312bc8cc0adaa5ef29ed1ce281b541eb144b3ff2a2f02",
+      "embodied_rsi.stage_prompts": "937c61d03889e257d05786052437dac76bef063c4f434e016af143c9783caafd",
+      "embodied_jev.physics": "e6a0d2a537a9cac28f874d81e60cc53814194d00ad75f6d4648dae5bc272ddc8",
+      "embodied_jev.planning": "faae2d85a349ff6518cb0a214154559906881f6a8e2248678a6672ab328c86ed",
+      "embodied_rsi.code_study": "d21df7e1d150ed78febd83230523584ae01fca1711abb1fab21a270404c51eec"
+    },
+    "warmup_excluded_from_latency": true,
+    "selection_or_training": false,
+    "automatic_deployment": false,
+    "fault": "First close command is replaced by open; previews do not consume the live fault.",
+    "scope": "Code-policy experiment; simulator state and collision previews; no visual perception"
+  },
+  "protocol_sha256": "4ea180e27f4e532868530a56aea65012241c10d0dd7f005b304da2ace67e383e",
+  "model_load_and_warmup_seconds": 4.455965676002961,
+  "policies": {
+    "normal": {
+      "code": {
+        "episodes": 90,
+        "successes": 90,
+        "success_rate": 1.0,
+        "mean_steps": 8.0,
+        "mean_model_calls": 0.0,
+        "decision_p95_ms": 0.012578401583596131,
+        "mean_wall_seconds": 1.9515235672890412,
+        "risks": {
+          "collisions": 0,
+          "drops": 0,
+          "rejections": 0
+        },
+        "fault_exposed_episodes": 0,
+        "successful_after_fault": 0,
+        "success_after_fault_rate": null,
+        "detected_failures": 0
+      },
+      "code_no_recovery": {
+        "episodes": 90,
+        "successes": 90,
+        "success_rate": 1.0,
+        "mean_steps": 8.0,
+        "mean_model_calls": 0.0,
+        "decision_p95_ms": 0.012544801757030655,
+        "mean_wall_seconds": 1.9512320660335616,
+        "risks": {
+          "collisions": 0,
+          "drops": 0,
+          "rejections": 0
+        },
+        "fault_exposed_episodes": 0,
+        "successful_after_fault": 0,
+        "success_after_fault_rate": null,
+        "detected_failures": 0
+      },
+      "rsi": {
+        "episodes": 90,
+        "successes": 90,
+        "success_rate": 1.0,
+        "mean_steps": 11.666666666666666,
+        "mean_model_calls": 11.666666666666666,
+        "decision_p95_ms": 86.37551919800899,
+        "mean_wall_seconds": 3.3130756116112834,
+        "risks": {
+          "collisions": 0,
+          "drops": 0,
+          "rejections": 0
+        },
+        "fault_exposed_episodes": 0,
+        "successful_after_fault": 0,
+        "success_after_fault_rate": null,
+        "detected_failures": 0
+      },
+      "hybrid": {
+        "episodes": 90,
+        "successes": 90,
+        "success_rate": 1.0,
+        "mean_steps": 8.6,
+        "mean_model_calls": 5.6,
+        "decision_p95_ms": 85.21603925164526,
+        "mean_wall_seconds": 2.521229863422074,
+        "risks": {
+          "collisions": 0,
+          "drops": 0,
+          "rejections": 0
+        },
+        "fault_exposed_episodes": 0,
+        "successful_after_fault": 0,
+        "success_after_fault_rate": null,
+        "detected_failures": 0
+      }
+    },
+    "missed-grasp": {
+      "code": {
+        "episodes": 90,
+        "successes": 90,
+        "success_rate": 1.0,
+        "mean_steps": 11.0,
+        "mean_model_calls": 0.0,
+        "decision_p95_ms": 0.012465599138522519,
+        "mean_wall_seconds": 2.2357111968557244,
+        "risks": {
+          "collisions": 0,
+          "drops": 0,
+          "rejections": 0
+        },
+        "fault_exposed_episodes": 90,
+        "successful_after_fault": 90,
+        "success_after_fault_rate": 1.0,
+        "detected_failures": 90
+      },
+      "code_no_recovery": {
+        "episodes": 90,
+        "successes": 0,
+        "success_rate": 0.0,
+        "mean_steps": 3.0,
+        "mean_model_calls": 0.0,
+        "decision_p95_ms": 0.0129048001326737,
+        "mean_wall_seconds": 0.3276958956665718,
+        "risks": {
+          "collisions": 0,
+          "drops": 0,
+          "rejections": 0
+        },
+        "fault_exposed_episodes": 90,
+        "successful_after_fault": 0,
+        "success_after_fault_rate": 0.0,
+        "detected_failures": 90
+      },
+      "rsi": {
+        "episodes": 90,
+        "successes": 89,
+        "success_rate": 0.9888888888888889,
+        "mean_steps": 12.155555555555555,
+        "mean_model_calls": 12.155555555555555,
+        "decision_p95_ms": 86.11663939955179,
+        "mean_wall_seconds": 3.320591823455713,
+        "risks": {
+          "collisions": 0,
+          "drops": 0,
+          "rejections": 0
+        },
+        "fault_exposed_episodes": 90,
+        "successful_after_fault": 89,
+        "success_after_fault_rate": 0.9888888888888889,
+        "detected_failures": 0
+      },
+      "hybrid": {
+        "episodes": 90,
+        "successes": 90,
+        "success_rate": 1.0,
+        "mean_steps": 11.555555555555555,
+        "mean_model_calls": 7.555555555555555,
+        "decision_p95_ms": 85.4226043997187,
+        "mean_wall_seconds": 2.892194204033432,
+        "risks": {
+          "collisions": 0,
+          "drops": 0,
+          "rejections": 0
+        },
+        "fault_exposed_episodes": 90,
+        "successful_after_fault": 90,
+        "success_after_fault_rate": 1.0,
+        "detected_failures": 90
+      }
+    }
+  },
+  "paired_comparisons": {
+    "normal": {
+      "code_vs_code_no_recovery": {
+        "pairs": 90,
+        "success_rate": 1.0,
+        "champion_success_rate": 1.0,
+        "paired_gain": 0.0,
+        "gain_ci95": [
+          0.0,
+          0.0
+        ],
+        "by_task": {
+          "transfer": {
+            "pairs": 90,
+            "candidate_success_rate": 1.0,
+            "champion_success_rate": 1.0,
+            "delta": 0.0
+          }
+        },
+        "risks": {
+          "collisions": {
+            "candidate": 0,
+            "champion": 0
+          },
+          "drops": {
+            "candidate": 0,
+            "champion": 0
+          },
+          "rejections": {
+            "candidate": 0,
+            "champion": 0
+          }
+        },
+        "mean_steps": 8.0,
+        "p95_latency_ms": 0.014583119718736267,
+        "gate": {
+          "passed": false,
+          "checks": {
+            "enough_pairs": true,
+            "task_coverage": true,
+            "success_gain": false,
+            "confidence_interval": false,
+            "no_task_regression": true,
+            "no_risk_increase": true
+          },
+          "thresholds": {
+            "min_pairs": 90,
+            "gain": 0.05,
+            "regression": 0.02,
+            "tasks": [
+              "transfer"
+            ]
+          }
+        },
+        "scope": "privileged-state / code-generated skills / partial simulator collision checks"
+      },
+      "code_vs_rsi": {
+        "pairs": 90,
+        "success_rate": 1.0,
+        "champion_success_rate": 1.0,
+        "paired_gain": 0.0,
+        "gain_ci95": [
+          0.0,
+          0.0
+        ],
+        "by_task": {
+          "transfer": {
+            "pairs": 90,
+            "candidate_success_rate": 1.0,
+            "champion_success_rate": 1.0,
+            "delta": 0.0
+          }
+        },
+        "risks": {
+          "collisions": {
+            "candidate": 0,
+            "champion": 0
+          },
+          "drops": {
+            "candidate": 0,
+            "champion": 0
+          },
+          "rejections": {
+            "candidate": 0,
+            "champion": 0
+          }
+        },
+        "mean_steps": 8.0,
+        "p95_latency_ms": 0.014583119718736267,
+        "gate": {
+          "passed": false,
+          "checks": {
+            "enough_pairs": true,
+            "task_coverage": true,
+            "success_gain": false,
+            "confidence_interval": false,
+            "no_task_regression": true,
+            "no_risk_increase": true
+          },
+          "thresholds": {
+            "min_pairs": 90,
+            "gain": 0.05,
+            "regression": 0.02,
+            "tasks": [
+              "transfer"
+            ]
+          }
+        },
+        "scope": "privileged-state / code-generated skills / partial simulator collision checks"
+      },
+      "hybrid_vs_rsi": {
+        "pairs": 90,
+        "success_rate": 1.0,
+        "champion_success_rate": 1.0,
+        "paired_gain": 0.0,
+        "gain_ci95": [
+          0.0,
+          0.0
+        ],
+        "by_task": {
+          "transfer": {
+            "pairs": 90,
+            "candidate_success_rate": 1.0,
+            "champion_success_rate": 1.0,
+            "delta": 0.0
+          }
+        },
+        "risks": {
+          "collisions": {
+            "candidate": 0,
+            "champion": 0
+          },
+          "drops": {
+            "candidate": 0,
+            "champion": 0
+          },
+          "rejections": {
+            "candidate": 0,
+            "champion": 0
+          }
+        },
+        "mean_steps": 8.6,
+        "p95_latency_ms": 86.65728607636083,
+        "gate": {
+          "passed": false,
+          "checks": {
+            "enough_pairs": true,
+            "task_coverage": true,
+            "success_gain": false,
+            "confidence_interval": false,
+            "no_task_regression": true,
+            "no_risk_increase": true
+          },
+          "thresholds": {
+            "min_pairs": 90,
+            "gain": 0.05,
+            "regression": 0.02,
+            "tasks": [
+              "transfer"
+            ]
+          }
+        },
+        "scope": "privileged-state / code-generated skills / partial simulator collision checks"
+      }
+    },
+    "missed-grasp": {
+      "code_vs_code_no_recovery": {
+        "pairs": 90,
+        "success_rate": 1.0,
+        "champion_success_rate": 0.0,
+        "paired_gain": 1.0,
+        "gain_ci95": [
+          1.0,
+          1.0
+        ],
+        "by_task": {
+          "transfer": {
+            "pairs": 90,
+            "candidate_success_rate": 1.0,
+            "champion_success_rate": 0.0,
+            "delta": 1.0
+          }
+        },
+        "risks": {
+          "collisions": {
+            "candidate": 0,
+            "champion": 0
+          },
+          "drops": {
+            "candidate": 0,
+            "champion": 0
+          },
+          "rejections": {
+            "candidate": 0,
+            "champion": 0
+          }
+        },
+        "mean_steps": 11.0,
+        "p95_latency_ms": 0.013835200388712108,
+        "gate": {
+          "passed": true,
+          "checks": {
+            "enough_pairs": true,
+            "task_coverage": true,
+            "success_gain": true,
+            "confidence_interval": true,
+            "no_task_regression": true,
+            "no_risk_increase": true
+          },
+          "thresholds": {
+            "min_pairs": 90,
+            "gain": 0.05,
+            "regression": 0.02,
+            "tasks": [
+              "transfer"
+            ]
+          }
+        },
+        "scope": "privileged-state / code-generated skills / partial simulator collision checks"
+      },
+      "code_vs_rsi": {
+        "pairs": 90,
+        "success_rate": 1.0,
+        "champion_success_rate": 0.9888888888888889,
+        "paired_gain": 0.011111111111111112,
+        "gain_ci95": [
+          0.0,
+          0.03333333333333333
+        ],
+        "by_task": {
+          "transfer": {
+            "pairs": 90,
+            "candidate_success_rate": 1.0,
+            "champion_success_rate": 0.9888888888888889,
+            "delta": 0.011111111111111112
+          }
+        },
+        "risks": {
+          "collisions": {
+            "candidate": 0,
+            "champion": 0
+          },
+          "drops": {
+            "candidate": 0,
+            "champion": 0
+          },
+          "rejections": {
+            "candidate": 0,
+            "champion": 0
+          }
+        },
+        "mean_steps": 11.0,
+        "p95_latency_ms": 0.013835200388712108,
+        "gate": {
+          "passed": false,
+          "checks": {
+            "enough_pairs": true,
+            "task_coverage": true,
+            "success_gain": false,
+            "confidence_interval": false,
+            "no_task_regression": true,
+            "no_risk_increase": true
+          },
+          "thresholds": {
+            "min_pairs": 90,
+            "gain": 0.05,
+            "regression": 0.02,
+            "tasks": [
+              "transfer"
+            ]
+          }
+        },
+        "scope": "privileged-state / code-generated skills / partial simulator collision checks"
+      },
+      "hybrid_vs_rsi": {
+        "pairs": 90,
+        "success_rate": 1.0,
+        "champion_success_rate": 0.9888888888888889,
+        "paired_gain": 0.011111111111111112,
+        "gain_ci95": [
+          0.0,
+          0.03333333333333333
+        ],
+        "by_task": {
+          "transfer": {
+            "pairs": 90,
+            "candidate_success_rate": 1.0,
+            "champion_success_rate": 0.9888888888888889,
+            "delta": 0.011111111111111112
+          }
+        },
+        "risks": {
+          "collisions": {
+            "candidate": 0,
+            "champion": 0
+          },
+          "drops": {
+            "candidate": 0,
+            "champion": 0
+          },
+          "rejections": {
+            "candidate": 0,
+            "champion": 0
+          }
+        },
+        "mean_steps": 11.555555555555555,
+        "p95_latency_ms": 87.11117862440005,
+        "gate": {
+          "passed": false,
+          "checks": {
+            "enough_pairs": true,
+            "task_coverage": true,
+            "success_gain": false,
+            "confidence_interval": false,
+            "no_task_regression": true,
+            "no_risk_increase": true
+          },
+          "thresholds": {
+            "min_pairs": 90,
+            "gain": 0.05,
+            "regression": 0.02,
+            "tasks": [
+              "transfer"
+            ]
+          }
+        },
+        "scope": "privileged-state / code-generated skills / partial simulator collision checks"
+      }
+    }
+  },
+  "deployment_supported": false,
+  "interpretation": "Paired gates are diagnostics only; no code deployment or training is performed."
+}

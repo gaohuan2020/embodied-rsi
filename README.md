@@ -89,6 +89,8 @@ python3 scripts/bootstrap.py --rsi
 
 ## 开发
 
+新增有状态代码策略、失败恢复及 RSI／混合策略的独立对照实验：见 [代码策略实验](docs/CODE_POLICY.md)。通过 `code-study` 运行；结果与现有训练和部署记录分开保存。
+
 ```bash
 .venv/bin/ruff check src tests scripts
 MUJOCO_GL=egl .venv/bin/pytest -q

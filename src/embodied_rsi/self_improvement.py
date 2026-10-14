@@ -41,11 +41,13 @@ def success_dataset(files, output, tasks=None):
                 ep = json.loads(line)
                 if tasks and ep["task"] not in tasks:
                     continue
+                if ep.get("data_role") == "evaluation_only":
+                    raise ValueError("Evaluation-only trajectories cannot enter success replay")
                 total += 1
                 if not ep["success"]:
                     continue
-                if ep.get("source_policy") == "teacher":
-                    raise ValueError("Self-improvement cannot relabel teacher trajectories as model successes")
+                if ep.get("source_policy") in {"teacher", "code", "code_no_recovery", "hybrid"}:
+                    raise ValueError("Self-improvement cannot relabel teacher/code/hybrid trajectories as model successes")
                 successes += 1
                 groups[ep["group"]] = "train"
                 for row in ep["records"]:
