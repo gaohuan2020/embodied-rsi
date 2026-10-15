@@ -17,7 +17,7 @@ def model_episode(success=True):
     row = sample()["records"][0]
     row.update(choice="grasp", executed=True, gold=[1., 0.])
     return {"success": success, "source_policy": "rsi", "task": "transfer", "seed": 42,
-            "group": "transfer:42:0", "episode_id": "model-42", "records": [row]}
+            "group": "transfer:42:0", "episode_id": "model-42" if success else "model-42-failure", "records": [row]}
 
 
 def test_replay_keeps_only_completed_model_actions_and_ignores_teacher_gold(tmp_path):

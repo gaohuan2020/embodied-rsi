@@ -41,8 +41,11 @@ class CompactPolicy:
 
     @classmethod
     def load(cls, path):
+        from .episode_protocol import checkpoint_protocol
         with np.load(Path(path) / "weights.npz", allow_pickle=False) as data:
-            return cls(data["weights"], float(data["temperature"]))
+            policy = cls(data["weights"], float(data["temperature"]))
+        policy.episode_protocol = checkpoint_protocol(path)
+        return policy
 
     def predict(self, state, criteria):
         x = features(state, criteria)

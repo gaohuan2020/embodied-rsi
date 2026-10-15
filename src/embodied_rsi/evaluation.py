@@ -32,6 +32,11 @@ def paired_report(candidate, champion, min_pairs=90, gain=.05, regression=.02, e
     if any(r.get("policy_version") != POLICY_VERSION for r in candidate + champion):
         raise ValueError("Controller protocol mismatch")
     groups = sorted(new)
+    for group in groups:
+        for field in ("task", "scene_hash", "scene_distribution", "control_protocol", "success_definition",
+                      "episode_protocol"):
+            if new[group].get(field) != old[group].get(field):
+                raise ValueError(f"Paired evaluation {field} mismatch for {group}")
     delta = np.asarray([float(new[k]["success"]) - float(old[k]["success"]) for k in groups])
     rng = np.random.default_rng(42)
     samples = np.asarray([delta[rng.integers(0, len(delta), len(delta))].mean() for _ in range(5000)])

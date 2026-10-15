@@ -35,6 +35,9 @@ class HTTPPolicy:
 class InProcessRSI:
     def __init__(self, checkpoint, device=None, revision=None):
         from rsijev import Decider
+
+        from .episode_protocol import checkpoint_protocol, rsi_default_protocol
+        self.episode_protocol = checkpoint_protocol(checkpoint, rsi_default_protocol())
         # Match the differentiable learner: otherwise a bf16 serving tower can
         # choose a different argmax from the fp32 model used for development.
         self.decider = Decider(checkpoint, device=device, dtype="fp32", revision=revision)

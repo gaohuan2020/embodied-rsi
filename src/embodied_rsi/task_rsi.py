@@ -19,6 +19,8 @@ class RSILearner:
 
         self.torch, self.device, self.lr = torch, device, lr
         self.parent = resolve_ckpt(checkpoint, revision=revision)
+        from .episode_protocol import checkpoint_protocol, rsi_default_protocol
+        self.episode_protocol = checkpoint_protocol(self.parent, rsi_default_protocol())
         self.meta = json.loads((self.parent / "meta.json").read_text())
         spec = self.meta["spec"]
         if spec.get("arch_extra", {}).get("aux_exits") or self.meta.get("vision") or spec.get(
@@ -136,6 +138,7 @@ class RSILearner:
     def save(self, path, metadata):
         from safetensors.torch import save_file
 
+        metadata = {**metadata, "episode_protocol": self.episode_protocol}
         path = Path(path)
         path.mkdir(parents=True, exist_ok=True)
         local = (self.parent / "config.json").exists()

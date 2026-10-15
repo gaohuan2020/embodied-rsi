@@ -90,7 +90,7 @@ class Simulation:
                 self.step_once = action == "step"
                 self.state["status"] = "starting"
                 self.collection = {"episodes": 0, "successful_episodes": 0, "failed_episodes": 0, "success_rate": 0.}
-                self.state.update(records=[], decision=None, result=None, version=None)
+                self.state.update(records=[], decision=None, result=None, version=None, model_episode_index=None)
                 self.frames = []
                 config = {"task": task, "seed": seed, "policy": policy, "explore": explore,
                           "continuous": continuous, "max_steps": max_steps, "checkpoint": checkpoint,
@@ -189,7 +189,7 @@ class Simulation:
                               "task": task_for(config["seed"])}
                 with self.lock:
                     self.state.update(config, records=[], decision=None, result=None, error=None, version=None,
-                                      control=None, prompt=None)
+                                      control=None, prompt=None, model_episode_index=None)
                     self.frames = []
                 if action == "reset":
                     world = RobotWorld(self.state["task"], self.state["seed"])
@@ -240,8 +240,20 @@ class Simulation:
                             self.memories[backend].import_past()
                         memory = self.memories[backend]
                         policy = ExploringPolicy(policy, memory)
+                    model_episode_index = self.collection["episodes"] + 1
+                    if backend == "rsi":
+                        with self.store.connect() as db:
+                            completed = db.execute(
+                                "SELECT COUNT(DISTINCT COALESCE(json_extract(e.payload,'$.episode_id'),e.seq)) "
+                                "FROM events e JOIN runs r ON r.id=e.run_id "
+                                "WHERE e.kind='episode' AND r.kind='explore' AND r.backend='rsi' "
+                                "AND json_extract(r.config,'$.continuous')=1 "
+                                "AND json_extract(e.payload,'$.source_policy')='rsi' "
+                                "AND json_extract(e.payload,'$.model_version')=?", (version,)).fetchone()[0]
+                        model_episode_index = completed + 1
                     with self.lock:
                         self.state.update(status="running", version=version,
+                            model_episode_index=model_episode_index,
                             request_protocol="RSI JSON-lines 模型请求" if backend == "rsi" else "本机参考策略",
                             sampling="失败引导探索" if memory else "确定性决策")
 

@@ -194,7 +194,8 @@ class Study:
         result = episode("transfer", seed, policy, max_steps=self.protocol["max_steps"],
                          label_mode="none", rng=rng, randomize_scene=True,
                          world_factory=factory, on_frame=self.preview.update,
-                         on_decision=decision, state_transform=grasp_state)
+                         on_decision=decision, state_transform=grasp_state,
+                         staged_prompts=self.protocol["episode_protocol"]["staged_prompts"])
         result.update(stages=worlds[0].diagnostics(), input_contract=INPUT_CONTRACT,
                       success_definition="strict_grasp_v1", source_policy="teacher" if policy is None else "rsi")
         labels = []
@@ -336,6 +337,7 @@ def run_study(store, rounds=3, explore_episodes=300, steps=300, warmup_steps=500
                 "dev_episodes": dev_episodes, "test_episodes": test_episodes,
                 "training_seeds": list(training_seeds), "pilot_episodes": pilot_episodes,
                 "checkpoint": str(checkpoint), "revision": REVISION, "max_steps": max_steps,
+                "episode_protocol": {"staged_prompts": False, "strict_grasp": True},
                 "eval_every": eval_every, "train_seed_start": 2000000,
                 "dev_seed_start": 2100000, "test_seed_start": 2200000,
                 "scene_distribution": "workspace-random-v1", "input_contract": INPUT_CONTRACT,
@@ -367,6 +369,7 @@ def run_study(store, rounds=3, explore_episodes=300, steps=300, warmup_steps=500
             from .task_rsi import RSILearner
             study.publish(stage="loading_model")
             learner = RSILearner(checkpoint, lr=1e-4, revision=REVISION)
+            learner.episode_protocol = dict(protocol["episode_protocol"])
             original = learner.snapshot()
             frozen_meta = copy.deepcopy(learner.meta)
             models = [("V0", 0, original, None)]

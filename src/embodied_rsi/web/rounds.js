@@ -37,20 +37,33 @@
     renderState();
   }
   function renderSuccessBars() {
-    const chart=node('success-bar-chart');if(!chart||!report)return;
+    const chart=node('success-bar-chart'); if(!chart||!report)return;
     const evaluation=node('success-bar-mode').value==='evaluation';
-    const rows=evaluation?report.training.map(r=>({label:`第 ${r.round} 轮`,rates:[r.parent_success_rate,r.candidate_success_rate],counts:[`${r.evaluated_pairs}/${r.total_pairs??'—'} 对`,r.deployment?`发布 V${r.model_round}`:r.gate_passed===false?'未更新':r.evaluation_status==='running'?'评测中':r.evaluation_status==='cancelled'?'已取消':r.evaluation?'未发布':'待评测'],partial:r.evaluation_status!=='completed',current:false})):report.collection.map(c=>({label:c.model_round==null?'指定模型':`V${c.model_round}`,rates:[c.success_rate],counts:[`${c.successes}/${c.episodes} 局成功`],partial:false,current:c.model_version===live.version}));
-    const key=JSON.stringify([evaluation,rows]);if(key===barKey)return;barKey=key;
-    node('success-bar-note').textContent=evaluation?'同一批场景比较父模型与候选模型；进行中的评测标为临时结果。':'每局完成后更新：成功局数 ÷ 完整任务总局数。随机探索采集与发布评测分别统计。';
-    node('success-bar-legend').innerHTML=evaluation?'<span class="bar-parent">● 父模型</span><span class="bar-candidate">● 候选模型</span><span>半透明柱：临时结果</span>':'<span class="bar-candidate">● 已完成任务的成功率</span><span>描边高亮：当前运行版本</span>';
-    if(!rows.length){chart.innerHTML=`<p class="empty">${evaluation?'等待第一轮训练及独立评测':'等待第一局完整任务结果'}</p>`;node('success-bar-summary').textContent='新实验的结果会自动记录并显示。';return;}
-    const width=Math.max(560,rows.length*112+86),height=280,left=48,right=20,top=30,bottom=202,span=(width-left-right)/rows.length,colors=evaluation?['#7aaaff','#73e3ba']:['#73e3ba'];
-    const y=rate=>bottom-rate*(bottom-top);
-    let content=`<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${evaluation?'每轮训练的父模型与候选模型独立任务成功率':'每个模型版本的连续采集任务成功率'}"><title>完整抓取并放入指定托盘的任务成功率</title>`;
-    content+=[0,.25,.5,.75,1].map(rate=>`<line x1="${left}" x2="${width-right}" y1="${y(rate)}" y2="${y(rate)}" stroke="#2a4150"/><text x="${left-8}" y="${y(rate)+4}" text-anchor="end" fill="#91a9bb" font-size="11">${Math.round(rate*100)}%</text>`).join('');
-    content+=rows.map((r,i)=>{const center=left+span*(i+.5),size=Math.min(34,span/(r.rates.length+2)),gap=7;return r.rates.map((rate,j)=>{const x=center+(j-(r.rates.length-1)/2)*(size+gap)-size/2,known=Number.isFinite(rate),value=known?Math.min(1,Math.max(0,rate)):0;const title=`${r.label} · ${evaluation?(j===0?'父模型':'候选模型'):'采集'} · ${known?pct(rate):'待评测'}${r.partial?' · 临时结果':''} · ${r.counts.join(' · ')}`;return `<g class="success-bar" data-rate="${known?rate:''}"><title>${escape(title)}</title>${known?`<rect x="${x}" y="${y(value)}" width="${size}" height="${bottom-y(value)}" rx="4" fill="${colors[j]}" opacity="${r.partial?'.5':'.86'}"/>`:''}<text x="${x+size/2}" y="${known?y(value)-9:bottom-10}" text-anchor="middle" fill="${known?colors[j]:'#879fae'}" font-size="12">${known?pct(rate):'—'}</text></g>`;}).join('')+`<text x="${center}" y="223" text-anchor="middle" fill="${r.current?'#9affd5':'#c0d4e2'}" font-size="12" font-weight="600">${escape(r.label)}${r.current?' · 当前':''}</text>${r.counts.map((text,j)=>`<text x="${center}" y="${243+j*16}" text-anchor="middle" fill="#89a4b6" font-size="10">${escape(text)}</text>`).join('')}${r.current?`<line x1="${center-size}" x2="${center+size}" y1="229" y2="229" stroke="#9affd5" stroke-width="2"/>`:''}`;}).join('');
-    chart.innerHTML=content+'</svg>';chart.style.setProperty('--bar-width',`${width}px`);
-    node('success-bar-summary').textContent=evaluation?`已记录 ${rows.length} 轮训练 · 仅完整评测用于发布判断`:`已记录 ${rows.length} 个模型版本 · ${report.collection.reduce((sum,c)=>sum+c.episodes,0)} 局完整任务`;
+    const rows=evaluation?report.training.map(r=>({label:`第 ${r.round} 轮`,rates:[r.parent_success_rate,r.candidate_success_rate],run:r.training,partial:r.evaluation_status!=='completed',detail:`${r.evaluated_pairs}/${r.total_pairs??'—'} 对场景 · ${r.deployment?'已发布':r.evaluation_status==='running'?'评测中':'未发布'}`})):report.collection.map(c=>({label:c.model_round==null?'指定模型':`V${c.model_round}`,rates:[c.success_rate],partial:false,detail:`${c.successes}/${c.episodes} 局完成`}));
+    const key=JSON.stringify([evaluation,rows]); if(key===barKey)return; barKey=key;
+    node('success-bar-note').textContent=evaluation?'每轮在同一批新场景比较候选与父模型；半透明点为进行中的结果。':'各运行版本的探索采集成绩；成功局数 ÷ 已完成局数。';
+    const series=evaluation?[{name:'当轮父模型',color:'#7aaaff'},{name:'训练后候选',color:'#73e3ba'}]:[{name:'探索采集成功率',color:'#73e3ba'}];
+    node('success-bar-legend').innerHTML=series.map(s=>`<span style="color:${s.color}">● ${s.name}</span>`).join('');
+    if(!rows.length){chart.innerHTML='<div class="history-empty"><span>等待第一轮成绩</span><p>完成采集和训练后，真实评测结果会显示在这里。</p></div>';node('success-bar-summary').textContent='每轮如实记录，包含持平、下降与未发布。';return;}
+    const width=640,height=300,left=48,right=28,top=28,bottom=242;
+    const x=i=>rows.length===1?(left+width-right)/2:left+i/(rows.length-1)*(width-left-right), y=v=>bottom-v*(bottom-top);
+    let svg=`<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="历史轮次任务成功率曲线"><title>完整任务成功率，按真实记录绘制</title>`;
+    svg+=[0,.25,.5,.75,1].map(rate=>`<line x1="${left}" x2="${width-right}" y1="${y(rate)}" y2="${y(rate)}" stroke="#2a4150" stroke-dasharray="3 5"/><text x="${left-10}" y="${y(rate)+4}" text-anchor="end" fill="#91a9bb" font-size="11">${Math.round(rate*100)}%</text>`).join('');
+    series.forEach((s,j)=>{
+      let segment=[];
+      const flush=()=>{if(segment.length>1)svg+=`<polyline points="${segment.join(' ')}" fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round"/>`;segment=[];};
+      rows.forEach((r,i)=>{const rate=r.rates[j]; if(Number.isFinite(rate))segment.push(`${x(i)},${y(rate)}`);else flush();}); flush();
+      svg+=rows.map((r,i)=>{const rate=r.rates[j];if(!Number.isFinite(rate))return '';const title=`${r.label} · ${s.name} ${pct(rate)} · ${r.detail}${r.partial?' · 临时成绩':''}`;return `<g class="history-point" data-index="${i}" tabindex="0" role="button" aria-label="${escape(title)}"><title>${escape(title)}</title><circle cx="${x(i)}" cy="${y(rate)}" r="12" fill="transparent"/><circle cx="${x(i)}" cy="${y(rate)}" r="4.5" fill="${s.color}" stroke="#102330" stroke-width="2" opacity="${r.partial?'.5':'1'}"/></g>`;}).join('');
+    });
+    const tick=Math.max(1,Math.ceil(rows.length/8));
+    svg+=rows.map((r,i)=>i%tick===0||i===rows.length-1?`<text x="${x(i)}" y="${bottom+25}" text-anchor="middle" fill="#9eb8c8" font-size="11">${escape(r.label)}</text>`:'').join('');
+    chart.innerHTML=svg+'</svg>'; chart.style.setProperty('--bar-width','0px');
+    const latest=rows.at(-1), rate=latest.rates.at(-1);
+    node('success-bar-summary').textContent=`${evaluation?`已记录 ${rows.length} 轮学习`:`已记录 ${rows.length} 个运行版本`} · 最新${evaluation?'候选':'采集'} ${pct(rate)}${latest.partial?'（评测中）':''} · ${latest.detail}`;
+    chart.querySelectorAll('.history-point').forEach(point=>{
+      const select=()=>{const r=rows[Number(point.dataset.index)];if(!r.run)return;const card=Array.from(document.querySelectorAll('.iteration-card')).find(c=>c.dataset.run===r.run);if(card){card.open=true;card.scrollIntoView({behavior:'smooth',block:'nearest'});}};
+      point.onclick=select;point.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();select();}};
+    });
   }
   if(node('success-bar-mode'))node('success-bar-mode').onchange=()=>{barKey='';renderSuccessBars();};
   function renderIteration(currentModel) {
@@ -79,6 +92,13 @@
     const collecting = ['running','starting','loading_model'].includes(live.status) && live.continuous;
     const round = report?.training.at(-1);
     const currentModel = report?.collection.find(c=>c.model_version===live.version);
+    if(node('evolution-round')) {
+      const modelRound=currentModel?.model_round??report?.training.find(r=>r.deployment===live.version)?.model_round??(live.version?.includes('v1.0-0.8b')?0:null);
+      const version=live.policy==='teacher'?'规则对照':modelRound!=null?`运行模型 V${modelRound}`:live.version?'指定运行模型':'运行模型待确认';
+      node('evolution-round').textContent=version+(round?` · 第 ${round.round} 轮学习`:' · 准备首次学习');
+      const number=live.model_episode_index??(currentModel?currentModel.episodes+(['running','starting','loading_model','paused'].includes(live.status)?1:0):null);
+      node('evolution-episode').textContent=number?`${live.policy==='teacher'?'本次':'本版本'}第 ${number} 局`:'等待第一局任务';
+    }
     renderIteration(currentModel);
     renderSuccessBars();
     const entries = [

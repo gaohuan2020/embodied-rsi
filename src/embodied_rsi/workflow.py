@@ -36,7 +36,7 @@ def collect(store, tasks, seeds, policy=None, policy_name="teacher", max_steps=2
 
 
 def evaluate(store, candidate, candidate_path, champion, champion_name, tasks, seeds,
-             max_steps=20, dataset=None, intervention=False, randomize_scene=False):
+             max_steps=20, dataset=None, intervention=False, randomize_scene=False, candidate_reloaded=False):
     import json
     seeds = list(seeds)
     metadata_path = Path(candidate_path) / "meta.json"
@@ -56,7 +56,8 @@ def evaluate(store, candidate, candidate_path, champion, champion_name, tasks, s
     champion_path = Path(champion_name)
     champion_sha = fingerprint(champion_path) if champion_path.is_dir() else None
     run_id = store.create("evaluate", "mujoco", {"candidate": str(candidate_path),
-        "champion": champion_name, "tasks": tasks, "seeds": list(seeds), "max_steps": max_steps})
+        "champion": champion_name, "tasks": tasks, "seeds": list(seeds), "max_steps": max_steps,
+        "candidate_reloaded": candidate_reloaded})
     new, old = [], []
     try:
         with Monitor(store, run_id), (store.run_dir(run_id) / "paired_episodes.jsonl").open("w") as f:
@@ -79,6 +80,7 @@ def evaluate(store, candidate, candidate_path, champion, champion_name, tasks, s
         report.update(candidate_checkpoint=str(Path(candidate_path).resolve()),
                       candidate_sha256=candidate_sha, champion=champion_name, champion_sha256=champion_sha,
                       model_backend=metadata.get("backend"),
+                      candidate_reloaded=candidate_reloaded,
                       scene_distribution="workspace-random-v1" if randomize_scene else "upstream-default")
         write_json(store.run_dir(run_id) / "report.json", report)
         store.finish(run_id, summary=report)

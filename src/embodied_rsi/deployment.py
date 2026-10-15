@@ -20,6 +20,8 @@ from .storage import dumps, write_json
 class RPCPolicy:
     """Keep GPU dependencies out of the dashboard's CPU environment."""
     def __init__(self, checkpoint, interpreter=None, revision=None):
+        from .episode_protocol import checkpoint_protocol, rsi_default_protocol
+        self.episode_protocol = checkpoint_protocol(checkpoint, rsi_default_protocol())
         self.lock = threading.Lock()
         if checkpoint == "v1.0-0.8b" and revision is None:
             revision = "f9248caceb89caf2e6c968ea33bf0d6eb7f957b0"
@@ -93,15 +95,12 @@ def deploy(store, report_path, expected_sha=None, rsi_python=None, registry_back
     try:
         policy = load_policy(checkpoint, rsi_python)
         try:
-            from embodied_jev.physics import RobotWorld
-
-            from .sim import criteria_for, menu_for, state_for
-            world = RobotWorld("transfer", 77777777)
-            criteria = criteria_for(menu_for(world))
-            p = policy.predict(state_for(world, []), criteria)
-            if (len(p) != len(criteria) or not np.isfinite(p).all() or (p < 0).any()
-                    or abs(p.sum() - 1) > .001):
-                raise ValueError("Deployment warmup returned invalid probabilities")
+            from .sim import episode
+            # Exercise the same state projection, skill menu and numeric checks
+            # used by the simulator, including the checkpoint's saved protocol.
+            warmup = episode("transfer", 77777777, policy, max_steps=1, label_mode="none")
+            if not warmup["records"]:
+                raise ValueError("Deployment warmup produced no robot decision")
         finally:
             if hasattr(policy, "close"):
                 policy.close()

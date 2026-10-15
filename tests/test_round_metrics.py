@@ -108,3 +108,53 @@ def test_dashboard_restart_observes_existing_job_without_launching_another(tmp_p
     store.finish(run)
     process.running = False
     assert jobs.list()[0]["status"] == "completed"
+
+
+def test_live_episode_number_continues_pinned_model_history_without_duplicate_events(tmp_path, monkeypatch):
+    import time
+    from types import SimpleNamespace
+
+    import numpy as np
+    import pytest
+    from fastapi.testclient import TestClient
+
+    from embodied_rsi.dashboard import create_app
+
+    pytest.importorskip("embodied_jev")
+    store = Store(tmp_path)
+    prior = store.create("explore", "rsi", {"continuous": True})
+    version = "RSI-Jev v1.0-0.8b / f9248caceb89"
+    for _ in range(2):
+        store.event(prior, "episode", {"episode_id": "same-episode", "source_policy": "rsi",
+                                      "model_version": version, "success": False})
+
+    class Policy:
+        def __init__(self, *args):
+            self.process = SimpleNamespace(poll=lambda: None)
+            self.episode_protocol = {"staged_prompts": True, "strict_grasp": True}
+
+        def predict(self, state, criteria):
+            return np.full(len(criteria), 1 / len(criteria))
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("embodied_rsi.deployment.RPCPolicy", Policy)
+    with TestClient(create_app(store)) as client:
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if client.get("/api/simulation").json()["status"] == "ready":
+                break
+            time.sleep(.05)
+        response = client.post("/api/simulation/control", json={"action": "run", "policy": "rsi-initial",
+            "continuous": True, "max_steps": 1, "auto_train": False})
+        assert response.status_code == 200
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            live = client.get("/api/simulation").json()
+            if live.get("model_episode_index") is not None:
+                break
+            time.sleep(.02)
+        assert live["model_episode_index"] == 2
+        assert live["version"] == version
+        assert client.post("/api/simulation/control", json={"action": "stop"}).status_code == 200

@@ -80,9 +80,10 @@ class Store:
             db.execute("UPDATE runs SET status=?,summary=?,updated=? WHERE id=?",
                        (status, dumps(summary or {}), time.time(), run_id))
 
-    def runs(self):
+    def runs(self, limit=200):
         with self.connect() as db:
-            rows = db.execute("SELECT * FROM runs ORDER BY created DESC LIMIT 200").fetchall()
+            rows = db.execute("SELECT * FROM runs ORDER BY created DESC LIMIT ?",
+                              (-1 if limit is None else limit,)).fetchall()
         result = []
         for row in rows:
             r = dict(row)

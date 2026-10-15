@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import time
 
 import numpy as np
@@ -98,8 +97,10 @@ def episode(task, seed, policy=None, max_steps=20, label_mode="teacher", interve
             staged_prompts=None):
     from embodied_jev.physics import RobotWorld
 
+    from .episode_protocol import episode_protocol
     from .scenes import DISTRIBUTION, scene_config
-    if world_factory is None and os.environ.get("EMBODIED_RSI_STRICT_GRASP") == "1":
+    protocol = episode_protocol(policy)
+    if world_factory is None and protocol["strict_grasp"]:
         from .grasp import GraspWorld, grasp_state
         world_factory, state_transform = GraspWorld, grasp_state
     world = (world_factory or RobotWorld)(task, seed, scene_config(task, seed) if randomize_scene else None)
@@ -116,8 +117,7 @@ def episode(task, seed, policy=None, max_steps=20, label_mode="teacher", interve
         capture_frame.capture_only = render_frame is None
         on_frame = capture_frame
     controller = None
-    staged_prompts = (os.environ.get("EMBODIED_RSI_STAGED_PROMPTS") == "1"
-                      if staged_prompts is None else staged_prompts)
+    staged_prompts = protocol["staged_prompts"] if staged_prompts is None else staged_prompts
     if staged_prompts and task == "transfer":
         from .stage_prompts import STAGES, PickPlaceStages
         controller = PickPlaceStages()
@@ -223,6 +223,7 @@ def episode(task, seed, policy=None, max_steps=20, label_mode="teacher", interve
             "scene_config": world.scene_config, "scene_hash": world.scene_hash,
             "episode_id": hashlib.sha256(f"{group}:{started}".encode()).hexdigest()[:20],
             "policy_version": POLICY_VERSION, "observation_mode": "privileged", "control_mode": "skills",
+            "episode_protocol": {"staged_prompts": bool(controller), "strict_grasp": hasattr(world, "diagnostics")},
             "success": success, "failure": None if success else failure or "budget_exhausted",
             "steps": len(records), "collisions": int(world.unsafe_contacts > 0), "drops": drops,
             "rejections": sum(not r["executed"] for r in records),

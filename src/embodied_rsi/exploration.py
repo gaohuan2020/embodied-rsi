@@ -29,7 +29,7 @@ class ExplorationMemory:
                        "PRIMARY KEY(backend,episode_id))")
 
     def import_past(self):
-        for run in self.store.runs():
+        for run in self.store.runs(limit=None):
             file = self.store.run_dir(run["id"]) / "episodes.jsonl"
             if run["kind"] == "explore" and run["backend"] == self.backend and file.exists():
                 with file.open() as source:
@@ -89,6 +89,11 @@ class ExploringPolicy:
         self.model, self.memory = model, memory
         self.last_model_probabilities = None
         self.last_details = None
+
+    @property
+    def episode_protocol(self):
+        from .episode_protocol import episode_protocol
+        return episode_protocol(self.model)
 
     def predict(self, state, criteria):
         p = np.asarray(self.model.predict(state, criteria), dtype=float)

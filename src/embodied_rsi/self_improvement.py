@@ -21,6 +21,8 @@ from .workflow import evaluate, reserve_suite
 class FrozenParentPolicy:
     def __init__(self, learner, head):
         self.learner, self.head = learner, head
+        from .episode_protocol import episode_protocol
+        self.episode_protocol = episode_protocol(learner)
 
     def predict(self, state, criteria):
         return self.learner.predict_with_head(self.head, state, criteria)
@@ -33,6 +35,7 @@ def success_dataset(files, output, tasks=None):
         raise FileExistsError("Successful trajectory datasets are immutable")
     output.mkdir(parents=True)
     total, successes, cases, groups, filtered = 0, 0, [], {}, 0
+    seen = set()
     for file in files:
         with Path(file).open() as source:
             for line in source:
@@ -43,6 +46,10 @@ def success_dataset(files, output, tasks=None):
                     continue
                 if ep.get("data_role") == "evaluation_only":
                     raise ValueError("Evaluation-only trajectories cannot enter success replay")
+                if ep.get("episode_id"):
+                    if ep["episode_id"] in seen:
+                        continue
+                    seen.add(ep["episode_id"])
                 total += 1
                 if not ep["success"]:
                     continue
@@ -94,17 +101,22 @@ def fit_successes(store, learner, dataset, steps=100, dev_start=1010000, dev_epi
                   seed_start=1000000, batch_size=16, backend="rsi", initialization=False,
                   randomize_scene=False, tasks=None, max_steps=20):
     tasks = tuple(tasks or TASKS)
-    dataset = Path(dataset)
+    dataset = Path(dataset).resolve()
     manifest = json.loads((dataset / "manifest.json").read_text())
     if hashlib.sha256((dataset / "train.jsonl").read_bytes()).hexdigest() != manifest["sha256"]["train"]:
         raise ValueError("Success replay dataset checksum mismatch")
     cases = [json.loads(line) for line in (dataset / "train.jsonl").read_text().splitlines() if line]
     if not cases:
         raise ValueError("No successful model trajectories; train is skipped")
+    if any(manifest["groups"].get(f"{task}:{seed}:0") in {"train", "dev"}
+           for task in tasks for seed in range(dev_start, dev_start + dev_episodes)):
+        raise ValueError("Development scenes overlap replay training data")
+    from .episode_protocol import replay_protocol
+    learner.episode_protocol = replay_protocol(cases)
     objective = "supervised_initialization" if initialization else "successful_episode_replay"
     config = {"objective": objective, "steps": steps, "batch_size": batch_size,
               "lr": learner.lr, "randomize_scene": randomize_scene, "tasks": list(tasks),
-              "max_steps": max_steps,
+              "max_steps": max_steps, "episode_protocol": learner.episode_protocol,
               "dataset": str(dataset), "dataset_sha256": manifest["sha256"],
               "train_seed_range": [seed_start, seed_start + 10000],
               "dev_seed_range": [dev_start, dev_start + dev_episodes]}
@@ -159,6 +171,7 @@ def fit_successes(store, learner, dataset, steps=100, dev_start=1010000, dev_epi
                        "checkpoint": str(directory / "checkpoint"),
                        "train_seconds": time.perf_counter() - started}
             learner.save(directory / "checkpoint", {**config, **summary})
+            write_json(directory / "summary.json", summary)
         store.finish(run, summary=summary)
         return run
     except BaseException as exc:
@@ -188,7 +201,7 @@ def self_improve(store, rounds=2, episodes=90, steps=100, checkpoint=None, backe
         "scene_distribution": "workspace-random-v1" if randomize_scene else "upstream-default"})
     results, files, collections = [], [], set()
     # Replay actual previous successful model data; failed episodes remain available to inspect.
-    for prior in store.runs():
+    for prior in store.runs(limit=None):
         file = store.run_dir(prior["id"]) / "episodes.jsonl"
         if prior["kind"] == "explore" and prior["backend"] == backend and file.exists():
             files.append(file)
@@ -251,7 +264,7 @@ def self_improve(store, rounds=2, episodes=90, steps=100, checkpoint=None, backe
                             Monitor(store, collection).metric(count, exploration_success_rate=complete / count,
                                                              successful_episodes=complete, episodes=count)
                 store.finish(collection, summary={"episodes": count, "successful_episodes": complete,
-                                                  "success_rate": complete / count if count else 0., "failed_episodes": count - complete})
+                                                  "success_rate": complete / count if count else None, "failed_episodes": count - complete})
                 files.append(store.run_dir(collection) / "episodes.jsonl")
                 dataset = store.root / "datasets" / f"success-{collection}"
                 manifest = success_dataset(files, dataset, tasks)
@@ -279,11 +292,16 @@ def self_improve(store, rounds=2, episodes=90, steps=100, checkpoint=None, backe
                     else:
                         old, old_name = parent_policy, parent_path
                     store.event(run, "stage", {"stage": "independent_evaluation", "round": index + 1})
+                    candidate = None
                     try:
-                        evaluation = evaluate(store, learner, path, old, old_name, list(tasks),
+                        candidate = load_policy(path)
+                        evaluation = evaluate(store, candidate, path, old, old_name, list(tasks),
                                               range(suite["release"], suite["release"] + episodes),
-                                              dataset=dataset, randomize_scene=randomize_scene, max_steps=max_steps)
+                                              dataset=dataset, randomize_scene=randomize_scene, max_steps=max_steps,
+                                              candidate_reloaded=True)
                     finally:
+                        if hasattr(candidate, "close"):
+                            candidate.close()
                         if hasattr(old, "close"):
                             old.close()
                     report = store.run_dir(evaluation) / "report.json"
@@ -308,7 +326,7 @@ def self_improve(store, rounds=2, episodes=90, steps=100, checkpoint=None, backe
         store.finish(run, summary={"rounds": results})
         return results
     except BaseException as exc:
-        for child in store.runs():
+        for child in store.runs(limit=None):
             if child["id"] in collections and child["status"] == "running":
                 store.finish(child["id"], "cancelled" if isinstance(exc, KeyboardInterrupt) else "failed",
                              {"error": str(exc)[:1000]})

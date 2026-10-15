@@ -1,0 +1,71 @@
+{
+  "date": "2026-10-15",
+  "task": "transfer",
+  "scope": "One replay round from original RSI weights in an independent artifact store. Uses historical autonomous collection.",
+  "collection": {
+    "episodes": 23,
+    "successful_episodes": 9,
+    "training_samples": 101
+  },
+  "training": {
+    "updates": 100,
+    "selected_step": 50,
+    "dev_before": 0,
+    "dev_selected": 0.6,
+    "parameters_changed": true,
+    "parent_head_sha256": "22cb924e0eb9432db467539e18df48ba837a09eee1106b94f04a21b430c11a06",
+    "selected_head_sha256": "fa46975983fdc0a2410bfa7a6eefa0e22e73be191f6adddd13828b31b793ca91"
+  },
+  "release": {
+    "pairs": 90,
+    "success_rate": 0.8222222222222222,
+    "champion_success_rate": 0.0,
+    "paired_gain": 0.8222222222222222,
+    "gain_ci95": [
+      0.7444444444444445,
+      0.9
+    ],
+    "risks": {
+      "collisions": {
+        "candidate": 0,
+        "champion": 0
+      },
+      "drops": {
+        "candidate": 0,
+        "champion": 0
+      },
+      "rejections": {
+        "candidate": 0,
+        "champion": 0
+      }
+    },
+    "gate": {
+      "passed": true,
+      "checks": {
+        "enough_pairs": true,
+        "task_coverage": true,
+        "success_gain": true,
+        "confidence_interval": true,
+        "no_task_regression": true,
+        "no_risk_increase": true
+      },
+      "thresholds": {
+        "min_pairs": 90,
+        "gain": 0.05,
+        "regression": 0.02,
+        "tasks": [
+          "transfer"
+        ]
+      }
+    },
+    "candidate_reloaded": true
+  },
+  "deployment": "deploy-20261015-152103-6d1d7e",
+  "runtime_audit": {
+    "episodes": 30,
+    "successes": 24,
+    "success_rate": 0.8,
+    "environment_flags_removed": true
+  },
+  "artifacts": "artifacts/flow-verification-20261015/verification.json"
+}

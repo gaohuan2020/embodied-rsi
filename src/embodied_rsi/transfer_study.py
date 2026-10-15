@@ -23,7 +23,7 @@ def transfer_study(store, rounds=3, explore_episodes=60, steps=100, release_epis
     if current(store, backend):
         raise ValueError("A clean baseline is required; reset prior deployments or use a fresh artifact store")
     if any(r["kind"] in {"study", "self-train", "task-train", "train", "initialize", "self-improve", "cycle"}
-           for r in store.runs()):
+           for r in store.runs(limit=None)):
         raise ValueError("A clean baseline is required; reset prior training runs or use a fresh artifact store")
     if backend == "rsi":
         from serve.release import resolve_ckpt
@@ -43,10 +43,13 @@ def transfer_study(store, rounds=3, explore_episodes=60, steps=100, release_epis
             store.finish(initial, summary={"checkpoint": str(checkpoint)})
         baseline = str(Path(checkpoint).resolve())
     audit_suite = reserve_suite(store)
+    from .episode_protocol import checkpoint_protocol, rsi_default_protocol
     protocol = {"tasks": ["transfer"], "rounds": rounds, "explore_episodes": explore_episodes,
         "steps": steps, "release_episodes": release_episodes, "audit_episodes": audit_episodes,
         "max_steps": max_steps, "scene_distribution": "upstream-default",
         "baseline": baseline, "baseline_sha256": fingerprint(baseline), "revision": REVISION,
+        "episode_protocol": checkpoint_protocol(baseline, rsi_default_protocol()) if backend == "rsi" else
+                            checkpoint_protocol(baseline),
         "seeded_source_jitter_m": .025, "random_target": False,
         "audit_seed_start": audit_suite["release"], "audit_revealed": "after_all_training_rounds",
         "labels": "actual successful model actions; no teacher initialization",

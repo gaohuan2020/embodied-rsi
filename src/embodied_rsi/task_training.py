@@ -30,7 +30,9 @@ def task_score(results):
 
 class CompactLearner:
     def __init__(self, parent=None, lr=.03):
+        from .episode_protocol import episode_protocol
         self.policy = CompactPolicy.load(parent) if parent else CompactPolicy()
+        self.episode_protocol = episode_protocol(self.policy)
         self.lr = lr
 
     def predict(self, state, criteria):
